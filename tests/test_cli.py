@@ -158,6 +158,15 @@ class TestSubmit:
         out = json.loads(r.output)
         assert out["ok"] is False
 
+    def test_submit_fails_on_non_list_tasks(self, tmp_path):
+        f = tmp_path / "bad.yaml"
+        f.write_text("tasks: null\n")
+        r = _runner().invoke(main, ["submit", str(f)])
+        assert r.exit_code == 1
+        out = json.loads(r.output)
+        assert out["ok"] is False
+        assert "must be a list" in out["error"]
+
     def test_submit_posts_all_tasks(self, tmp_path, monkeypatch):
         monkeypatch.setenv("PASLOE_API_KEY", "k")
         f = tmp_path / "tasks.yaml"

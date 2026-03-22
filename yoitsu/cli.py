@@ -214,6 +214,8 @@ def submit(tasks_file: str) -> None:
     try:
         doc = yaml.safe_load(raw)
         tasks = doc["tasks"]
+        if not isinstance(tasks, list):
+            raise ValueError(f"'tasks' must be a list, got {type(tasks).__name__}")
     except Exception as exc:
         _fail(f"Invalid YAML: {exc}")
 
