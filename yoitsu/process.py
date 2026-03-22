@@ -41,14 +41,14 @@ def is_alive(pid: int) -> bool:
 def read_pids() -> dict[str, Any] | None:
     """Return parsed .pids.json or None if it doesn't exist / is corrupt."""
     try:
-        return json.loads((ROOT / ".pids.json").read_text())
+        return json.loads(_PIDS_FILE.read_text())
     except (FileNotFoundError, json.JSONDecodeError):
         return None
 
 
 def write_pids(*, pasloe_pid: int, trenni_pid: int) -> None:
     now = datetime.now(timezone.utc).isoformat()
-    (ROOT / ".pids.json").write_text(json.dumps({
+    _PIDS_FILE.write_text(json.dumps({
         "pasloe": {"pid": pasloe_pid, "started_at": now},
         "trenni": {"pid": trenni_pid, "started_at": now},
     }, indent=2))
@@ -57,7 +57,7 @@ def write_pids(*, pasloe_pid: int, trenni_pid: int) -> None:
 def clear_pids() -> None:
     """Remove .pids.json; no-op if already absent."""
     try:
-        (ROOT / ".pids.json").unlink()
+        _PIDS_FILE.unlink()
     except FileNotFoundError:
         pass
 

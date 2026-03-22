@@ -27,6 +27,7 @@ class TestIsAlive:
 class TestPidFile:
     def test_write_and_read_pids(self, tmp_path, monkeypatch):
         monkeypatch.setattr(proc, "ROOT", tmp_path)
+        monkeypatch.setattr(proc, "_PIDS_FILE", tmp_path / ".pids.json")
         proc.write_pids(pasloe_pid=100, trenni_pid=200)
         data = proc.read_pids()
         assert data["pasloe"]["pid"] == 100
@@ -34,16 +35,19 @@ class TestPidFile:
 
     def test_read_pids_returns_none_when_missing(self, tmp_path, monkeypatch):
         monkeypatch.setattr(proc, "ROOT", tmp_path)
+        monkeypatch.setattr(proc, "_PIDS_FILE", tmp_path / ".pids.json")
         assert proc.read_pids() is None
 
     def test_clear_pids_removes_file(self, tmp_path, monkeypatch):
         monkeypatch.setattr(proc, "ROOT", tmp_path)
+        monkeypatch.setattr(proc, "_PIDS_FILE", tmp_path / ".pids.json")
         proc.write_pids(pasloe_pid=1, trenni_pid=2)
         proc.clear_pids()
         assert proc.read_pids() is None
 
     def test_clear_pids_is_idempotent(self, tmp_path, monkeypatch):
         monkeypatch.setattr(proc, "ROOT", tmp_path)
+        monkeypatch.setattr(proc, "_PIDS_FILE", tmp_path / ".pids.json")
         proc.clear_pids()  # file doesn't exist — should not raise
 
 
