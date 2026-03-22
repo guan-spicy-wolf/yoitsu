@@ -71,13 +71,16 @@ def clear_pids() -> None:
 def start_pasloe() -> int:
     """Launch pasloe; return its PID. Raises on immediate spawn failure."""
     log_file = open(_PASLOE_LOG, "a")
-    p = subprocess.Popen(
-        ["uv", "run", "uvicorn", "src.pasloe.app:app",
-         "--host", "127.0.0.1", "--port", "8000"],
-        cwd=_PASLOE_DIR,
-        stdout=log_file,
-        stderr=log_file,
-    )
+    try:
+        p = subprocess.Popen(
+            ["uv", "run", "uvicorn", "src.pasloe.app:app",
+             "--host", "127.0.0.1", "--port", "8000"],
+            cwd=_PASLOE_DIR,
+            stdout=log_file,
+            stderr=log_file,
+        )
+    finally:
+        log_file.close()
     return p.pid
 
 
@@ -85,12 +88,15 @@ def start_trenni(config_path: Path | None = None) -> int:
     """Launch trenni; return its PID. Raises on immediate spawn failure."""
     config = str(config_path or _DEFAULT_CONFIG)
     log_file = open(_TRENNI_LOG, "a")
-    p = subprocess.Popen(
-        ["uv", "run", "trenni", "start", "-c", config],
-        cwd=_TRENNI_DIR,
-        stdout=log_file,
-        stderr=log_file,
-    )
+    try:
+        p = subprocess.Popen(
+            ["uv", "run", "trenni", "start", "-c", config],
+            cwd=_TRENNI_DIR,
+            stdout=log_file,
+            stderr=log_file,
+        )
+    finally:
+        log_file.close()
     return p.pid
 
 
