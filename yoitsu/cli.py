@@ -235,3 +235,54 @@ def submit(tasks_file: str) -> None:
         return {"submitted": submitted, "failed": failed, "errors": errors}
 
     _out(asyncio.run(_do_submit()))
+
+
+async def _control(endpoint: str) -> str | None:
+    """Returns None on success, error string on failure."""
+    client = TrenniClient(url=_TRENNI_URL)
+    err = await client.post_control(endpoint)
+    await client.aclose()
+    return err
+
+
+@main.command()
+def pause() -> None:
+    """Pause job dispatch (running jobs continue)."""
+    err = asyncio.run(_control("pause"))
+    if err is None:
+        _out({"ok": True})
+    else:
+        _fail(err)
+
+
+@main.command()
+def resume() -> None:
+    """Resume job dispatch."""
+    err = asyncio.run(_control("resume"))
+    if err is None:
+        _out({"ok": True})
+    else:
+        _fail(err)
+
+
+@main.command()
+@click.option("--service", type=click.Choice(["pasloe", "trenni", "all"]),
+              default="all", show_default=True)
+@click.option("--lines", default=100, show_default=True, type=int)
+def logs(service: str, lines: int) -> None:
+    """Print last N lines from service logs (plain text)."""
+    targets: list[tuple[str, Path]] = []
+    if service in ("pasloe", "all"):
+        targets.append(("pasloe", proc._PASLOE_LOG))
+    if service in ("trenni", "all"):
+        targets.append(("trenni", proc._TRENNI_LOG))
+
+    for name, path in targets:
+        if service == "all":
+            click.echo(f"=== {name} ===")
+        try:
+            text = path.read_text()
+            tail = text.splitlines()[-lines:]
+            click.echo("\n".join(tail))
+        except FileNotFoundError:
+            pass  # return empty, no error

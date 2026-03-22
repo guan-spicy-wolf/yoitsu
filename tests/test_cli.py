@@ -187,3 +187,55 @@ class TestSubmit:
         out = json.loads(r.output)
         assert out["submitted"] == 1
         assert out["failed"] == 1
+
+
+class TestPauseResume:
+    def test_pause_returns_ok(self):
+        with patch("yoitsu.client.TrenniClient.post_control",
+                   new=AsyncMock(return_value=None)), \
+             patch("yoitsu.client.TrenniClient.aclose", new=AsyncMock()):
+            r = _runner().invoke(main, ["pause"])
+        assert r.exit_code == 0
+        assert json.loads(r.output)["ok"] is True
+
+    def test_resume_returns_ok(self):
+        with patch("yoitsu.client.TrenniClient.post_control",
+                   new=AsyncMock(return_value=None)), \
+             patch("yoitsu.client.TrenniClient.aclose", new=AsyncMock()):
+            r = _runner().invoke(main, ["resume"])
+        assert r.exit_code == 0
+        assert json.loads(r.output)["ok"] is True
+
+    def test_pause_fails_and_surfaces_error_detail(self):
+        with patch("yoitsu.client.TrenniClient.post_control",
+                   new=AsyncMock(return_value="trenni returned 409: already paused")), \
+             patch("yoitsu.client.TrenniClient.aclose", new=AsyncMock()):
+            r = _runner().invoke(main, ["pause"])
+        assert r.exit_code == 1
+        out = json.loads(r.output)
+        assert out["ok"] is False
+        assert "409" in out["error"]
+
+
+class TestLogs:
+    def test_logs_returns_last_n_lines(self, tmp_path, monkeypatch):
+        import yoitsu.process as proc
+        monkeypatch.setattr(proc, "_PASLOE_LOG", tmp_path / "pasloe.log")
+        monkeypatch.setattr(proc, "_TRENNI_LOG", tmp_path / "trenni.log")
+        (tmp_path / "pasloe.log").write_text("line1\nline2\nline3\n")
+        (tmp_path / "trenni.log").write_text("tline1\ntline2\n")
+
+        r = _runner().invoke(main, ["logs", "--service", "pasloe", "--lines", "2"])
+        assert r.exit_code == 0
+        assert "line2" in r.output
+        assert "line3" in r.output
+        assert "line1" not in r.output
+
+    def test_logs_missing_file_returns_empty(self, tmp_path, monkeypatch):
+        import yoitsu.process as proc
+        monkeypatch.setattr(proc, "_PASLOE_LOG", tmp_path / "pasloe.log")
+        monkeypatch.setattr(proc, "_TRENNI_LOG", tmp_path / "trenni.log")
+
+        r = _runner().invoke(main, ["logs", "--service", "pasloe"])
+        assert r.exit_code == 0
+        assert r.output.strip() == ""
