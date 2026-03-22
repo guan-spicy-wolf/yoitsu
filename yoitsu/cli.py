@@ -159,3 +159,40 @@ def down() -> None:
 
     proc.clear_pids()
     _out({"ok": True, "stopped": stopped})
+
+
+async def _fetch_status(api_key: str) -> dict:
+    pids = proc.read_pids()
+    pasloe_pid = pids["pasloe"]["pid"] if pids else None
+    trenni_pid = pids["trenni"]["pid"] if pids else None
+    pasloe_alive = proc.is_alive(pasloe_pid) if pasloe_pid else False
+    trenni_alive = proc.is_alive(trenni_pid) if trenni_pid else False
+
+    pasloe_client = PasloeClient(url=_PASLOE_URL, api_key=api_key)
+    trenni_client = TrenniClient(url=_TRENNI_URL)
+
+    try:
+        if pasloe_alive:
+            stats = await pasloe_client.get_stats()
+            pasloe_out = {"alive": True, **(stats or {"error": "stats unavailable"})}
+        else:
+            pasloe_out = {"alive": False, "error": "process not running"}
+
+        if trenni_alive:
+            st = await trenni_client.get_status()
+            trenni_out = {"alive": True, **(st or {"error": "status unavailable"})}
+        else:
+            trenni_out = {"alive": False, "error": "process not running"}
+    finally:
+        await pasloe_client.aclose()
+        await trenni_client.aclose()
+
+    return {"pasloe": pasloe_out, "trenni": trenni_out}
+
+
+@main.command()
+def status() -> None:
+    """Show system status (always exits 0)."""
+    api_key = os.environ.get("PASLOE_API_KEY", "")
+    result = asyncio.run(_fetch_status(api_key))
+    _out(result)

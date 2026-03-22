@@ -99,3 +99,45 @@ class TestDown:
         assert 100 in killed
         assert 200 in killed
         assert proc.read_pids() is None
+
+
+class TestStatus:
+    def test_status_returns_both_services(self, tmp_path, monkeypatch):
+        import yoitsu.process as proc
+        monkeypatch.setattr(proc, "_PIDS_FILE", tmp_path / ".pids.json")
+        proc.write_pids(pasloe_pid=100, trenni_pid=200)
+
+        pasloe_stats = {"total_events": 10, "by_type": {"task.submit": 3}}
+        trenni_status = {
+            "running": True, "paused": False,
+            "running_jobs": 1, "max_workers": 4,
+            "pending_jobs": 0, "ready_queue_size": 0,
+        }
+
+        with (
+            patch("yoitsu.process.is_alive", return_value=True),
+            patch("yoitsu.client.PasloeClient.get_stats",
+                  new=AsyncMock(return_value=pasloe_stats)),
+            patch("yoitsu.client.TrenniClient.get_status",
+                  new=AsyncMock(return_value=trenni_status)),
+            patch("yoitsu.client.PasloeClient.aclose", new=AsyncMock()),
+            patch("yoitsu.client.TrenniClient.aclose", new=AsyncMock()),
+        ):
+            r = _runner().invoke(main, ["status"])
+
+        assert r.exit_code == 0
+        out = json.loads(r.output)
+        assert out["pasloe"]["alive"] is True
+        assert out["pasloe"]["total_events"] == 10
+        assert out["trenni"]["running"] is True
+
+    def test_status_marks_dead_service_as_not_alive(self, tmp_path, monkeypatch):
+        import yoitsu.process as proc
+        monkeypatch.setattr(proc, "_PIDS_FILE", tmp_path / ".pids.json")
+        # No PID file — both dead
+
+        r = _runner().invoke(main, ["status"])
+        assert r.exit_code == 0
+        out = json.loads(r.output)
+        assert out["pasloe"]["alive"] is False
+        assert out["trenni"]["alive"] is False
