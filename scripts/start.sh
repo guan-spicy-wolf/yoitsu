@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# DEPRECATED: Use `uv run yoitsu up` instead.
+# This script is kept for reference only.
 # start.sh — Start Pasloe + Trenni for a Yoitsu test run
 # Usage: OPENAI_API_KEY=sk-xxx ./start.sh
 set -euo pipefail

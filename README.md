@@ -21,16 +21,20 @@ Each component is a separate git repository. Use `scripts/setup.sh` to clone or 
 ./scripts/setup.sh
 
 # 2. Set env vars
-export ANTHROPIC_API_KEY=<key>
+export PASLOE_API_KEY=yoitsu-test-key-2026
+export OPENAI_API_KEY=<your-key>
 
-# 3. Start services
-./scripts/start.sh
+# 3. Start the stack
+uv run yoitsu up
 
 # 4. Submit tasks
-python3 scripts/submit-tasks.py
+uv run yoitsu submit scripts/trenni.yaml
 
 # 5. Monitor
-python3 scripts/monitor.py --hours 5
+uv run yoitsu status
+
+# 6. Stop
+uv run yoitsu down
 ```
 
 ## Configuration
