@@ -15,7 +15,7 @@
 - **Agent-first output**: all commands emit JSON to stdout; exit code 0 = success, 1 = failure. No color escapes, no spinners, no interactive prompts.
 - **Idempotent**: `up` when already running returns success without restarting. `down` when already stopped returns success.
 - **Fast failure**: `up` validates required env vars before spawning any process.
-- **No new infrastructure**: reuses pasloe's `/events/stats` and trenni's `/control/status`; no new endpoints needed.
+- **No new infrastructure**: reuses pasloe's `GET /events?limit=1` (readiness probe + data), `GET /events/stats` (status), and trenni's `GET /control/status`; no new endpoints needed.
 
 ---
 
@@ -39,8 +39,8 @@
 ### `yoitsu up [--config PATH]`
 
 1. Validate env vars: `PASLOE_API_KEY`, `OPENAI_API_KEY` — fail immediately if missing.
-2. Check `.pids.json`: if both processes are alive (`os.kill(pid, 0)` succeeds), return success without restarting.
-3. If PID file exists but process is dead (crash residue), clean up and proceed.
+2. Check `.pids.json`: if both processes are alive (`os.kill(pid, 0)` succeeds), return success without restarting. If only one is alive (partial-running state, e.g. one crashed), kill the survivor (`SIGTERM` → `SIGKILL` after 5s), clean `.pids.json`, and proceed with a fresh start.
+3. If PID file exists but all processes are dead (crash residue), clean up and proceed.
 4. Start pasloe: `uv run uvicorn src.pasloe.app:app --host 127.0.0.1 --port 8000` from `<root>/pasloe/` → append stdout+stderr to `pasloe.log`. If the `uv` subprocess itself fails to spawn (non-zero immediately), exit 1 with reason.
 5. Poll `GET /events?limit=1` (with `X-API-Key` header) every 0.5s, up to 10s. **Ready** = HTTP 200 received (body content irrelevant). Timeout = exit 1, kill pasloe.
 6. Start trenni: `uv run trenni start -c <config>` from `<root>/trenni/`, where `<config>` is `--config PATH` if provided (resolved relative to cwd), else `<root>/config/trenni.yaml`. Append stdout+stderr to `trenni.log`. If subprocess fails to spawn immediately, exit 1 with reason.
@@ -57,7 +57,7 @@
 1. Load `.pids.json`; if missing or both processes dead, return success.
 2. `POST /control/stop` to trenni (best-effort; skip if unreachable); poll `os.kill(pid, 0)` every 0.5s, up to 30s for process exit.
 3. If trenni still alive after 30s: `SIGTERM` → poll every 0.5s up to 5s → `SIGKILL`.
-4. `SIGTERM` pasloe → wait 5s → `SIGKILL`.
+4. `SIGTERM` pasloe → poll `os.kill(pid, 0)` every 0.5s up to 5s → `SIGKILL`.
 5. Remove `.pids.json`.
 
 **Output:**
@@ -108,6 +108,8 @@ tasks:
     init_branch: main
 ```
 
+All keys in each YAML item are forwarded verbatim into the `data` field of the POST body (no stripping, no renaming).
+
 **POST body sent to pasloe for each task** (matches pasloe's `AppendEventRequest` schema):
 ```json
 {
@@ -124,9 +126,9 @@ tasks:
 
 ### `yoitsu pause` / `yoitsu resume`
 
-Forward to `POST /control/pause` and `POST /control/resume` respectively.
+Forward to `POST /control/pause` and `POST /control/resume` respectively. If trenni returns non-200, surface the upstream status code and body in the error. If trenni is unreachable, exit 1.
 
-**Output:**
+**Output (success):**
 ```json
 {"ok": true}
 ```
