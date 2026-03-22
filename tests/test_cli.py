@@ -66,3 +66,36 @@ class TestUp:
         assert out["trenni_pid"] == 200
         pids = proc.read_pids()
         assert pids["pasloe"]["pid"] == 100
+
+
+class TestDown:
+    def test_down_succeeds_when_not_running(self, tmp_path, monkeypatch):
+        import yoitsu.process as proc
+        monkeypatch.setattr(proc, "_PIDS_FILE", tmp_path / ".pids.json")
+        r = _runner().invoke(main, ["down"])
+        assert r.exit_code == 0
+        out = json.loads(r.output)
+        assert out["ok"] is True
+        assert out["stopped"] == []
+
+    def test_down_stops_both_services(self, tmp_path, monkeypatch):
+        import yoitsu.process as proc
+        monkeypatch.setattr(proc, "ROOT", tmp_path)
+        monkeypatch.setattr(proc, "_PIDS_FILE", tmp_path / ".pids.json")
+        proc.write_pids(pasloe_pid=100, trenni_pid=200)
+
+        killed: list[int] = []
+        with (
+            patch("yoitsu.process.is_alive", return_value=True),
+            patch("yoitsu.process.kill_pid", side_effect=lambda pid, **kw: killed.append(pid)),
+            patch("yoitsu.cli._trenni_graceful_stop", new=AsyncMock(return_value=False)),
+        ):
+            r = _runner().invoke(main, ["down"])
+
+        assert r.exit_code == 0
+        out = json.loads(r.output)
+        assert out["ok"] is True
+        assert set(out["stopped"]) == {"trenni", "pasloe"}
+        assert 100 in killed
+        assert 200 in killed
+        assert proc.read_pids() is None

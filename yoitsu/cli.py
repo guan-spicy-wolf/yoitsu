@@ -107,3 +107,51 @@ def up(config_path: str | None) -> None:
     # 8. Write PID file
     proc.write_pids(pasloe_pid=pasloe_pid, trenni_pid=trenni_pid)
     _out({"ok": True, "pasloe_pid": pasloe_pid, "trenni_pid": trenni_pid})
+
+
+async def _trenni_graceful_stop(pid: int) -> bool:
+    """POST /control/stop; poll for exit. Return True if exited cleanly."""
+    client = TrenniClient(url=_TRENNI_URL)
+    await client.post_control("stop")
+    await client.aclose()
+
+    deadline = asyncio.get_running_loop().time() + 30.0
+    while asyncio.get_running_loop().time() < deadline:
+        if not proc.is_alive(pid):
+            return True
+        await asyncio.sleep(0.5)
+    return False
+
+
+@main.command()
+def down() -> None:
+    """Stop trenni + pasloe."""
+    pids = proc.read_pids()
+    if not pids:
+        _out({"ok": True, "stopped": []})
+        return
+
+    pasloe_pid = pids["pasloe"]["pid"]
+    trenni_pid = pids["trenni"]["pid"]
+
+    if not proc.is_alive(pasloe_pid) and not proc.is_alive(trenni_pid):
+        proc.clear_pids()
+        _out({"ok": True, "stopped": []})
+        return
+
+    stopped: list[str] = []
+
+    # Stop trenni gracefully, then force if needed
+    if proc.is_alive(trenni_pid):
+        exited = asyncio.run(_trenni_graceful_stop(trenni_pid))
+        if not exited:
+            proc.kill_pid(trenni_pid)
+        stopped.append("trenni")
+
+    # Stop pasloe
+    if proc.is_alive(pasloe_pid):
+        proc.kill_pid(pasloe_pid)
+        stopped.append("pasloe")
+
+    proc.clear_pids()
+    _out({"ok": True, "stopped": stopped})
