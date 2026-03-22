@@ -112,8 +112,12 @@ def up(config_path: str | None) -> None:
 async def _trenni_graceful_stop(pid: int) -> bool:
     """POST /control/stop; poll for exit. Return True if exited cleanly."""
     client = TrenniClient(url=_TRENNI_URL)
-    await client.post_control("stop")
-    await client.aclose()
+    try:
+        await client.post_control("stop")
+    except Exception:
+        pass  # best-effort; proceed to poll
+    finally:
+        await client.aclose()
 
     deadline = asyncio.get_running_loop().time() + 30.0
     while asyncio.get_running_loop().time() < deadline:
