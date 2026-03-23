@@ -140,8 +140,7 @@ poll_interval: 2.0      # Event polling interval (seconds)
 
 # Default LLM settings (per-job override supported)
 default_llm:
-  model: "kimi-k2.5"
-  api_base: "https://coding.dashscope.aliyuncs.com/v1"
+  model: "gpt-5.2-codex"
   api_key_env: "OPENAI_API_KEY"
   max_iterations: 30
   temperature: 0.2
