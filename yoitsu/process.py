@@ -1,6 +1,7 @@
 """Process lifecycle management: PID files, liveness, start/stop."""
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import signal
@@ -17,6 +18,35 @@ _TRENNI_LOG = ROOT / "trenni.log"
 _PASLOE_DIR = ROOT / "pasloe"
 _TRENNI_DIR = ROOT / "trenni"
 _DEFAULT_CONFIG = ROOT / "config" / "trenni.yaml"
+_LOCK_FILE = ROOT / ".yoitsu.lock"
+
+# Module-level to prevent GC
+_open_log_files: list = []
+
+
+# ---------------------------------------------------------------------------
+# Lock
+# ---------------------------------------------------------------------------
+
+def acquire_lock() -> int:
+    """Acquire exclusive lock. Returns fd on success, -1 if already locked."""
+    fd = os.open(str(_LOCK_FILE), os.O_CREAT | os.O_RDWR)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        os.close(fd)
+        return -1
+    return fd
+
+
+def release_lock(fd: int) -> None:
+    """Release exclusive lock."""
+    if fd >= 0:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+        except OSError:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -69,16 +99,15 @@ def clear_pids() -> None:
 def start_pasloe() -> int:
     """Launch pasloe; return its PID. Raises on immediate spawn failure."""
     log_file = open(_PASLOE_LOG, "a")
-    try:
-        p = subprocess.Popen(
-            ["uv", "run", "uvicorn", "src.pasloe.app:app",
-             "--host", "127.0.0.1", "--port", "8000"],
-            cwd=_PASLOE_DIR,
-            stdout=log_file,
-            stderr=log_file,
-        )
-    finally:
-        log_file.close()
+    _open_log_files.append(log_file)
+    p = subprocess.Popen(
+        ["uv", "run", "uvicorn", "src.pasloe.app:app",
+         "--host", "127.0.0.1", "--port", "8000"],
+        cwd=_PASLOE_DIR,
+        stdout=log_file,
+        stderr=log_file,
+        start_new_session=True,
+    )
     return p.pid
 
 
@@ -86,15 +115,14 @@ def start_trenni(config_path: Path | None = None) -> int:
     """Launch trenni; return its PID. Raises on immediate spawn failure."""
     config = str(config_path or _DEFAULT_CONFIG)
     log_file = open(_TRENNI_LOG, "a")
-    try:
-        p = subprocess.Popen(
-            ["uv", "run", "trenni", "start", "-c", config],
-            cwd=_TRENNI_DIR,
-            stdout=log_file,
-            stderr=log_file,
-        )
-    finally:
-        log_file.close()
+    _open_log_files.append(log_file)
+    p = subprocess.Popen(
+        ["uv", "run", "trenni", "start", "-c", config],
+        cwd=_TRENNI_DIR,
+        stdout=log_file,
+        stderr=log_file,
+        start_new_session=True,
+    )
     return p.pid
 
 

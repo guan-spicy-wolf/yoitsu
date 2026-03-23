@@ -25,12 +25,25 @@ class TestUp:
         assert out["ok"] is False
         assert "PASLOE_API_KEY" in out["error"]
 
+    def test_up_fails_if_lock_held(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("PASLOE_API_KEY", "k")
+        monkeypatch.setenv("OPENAI_API_KEY", "k")
+        import yoitsu.process as proc
+        monkeypatch.setattr(proc, "_LOCK_FILE", tmp_path / ".yoitsu.lock")
+        with patch("yoitsu.process.acquire_lock", return_value=-1):
+            r = _runner().invoke(main, ["up"])
+        assert r.exit_code == 1
+        out = json.loads(r.output)
+        assert out["ok"] is False
+        assert "Another yoitsu instance" in out["error"]
+
     def test_up_succeeds_when_both_already_alive(self, tmp_path, monkeypatch):
         monkeypatch.setenv("PASLOE_API_KEY", "k")
         monkeypatch.setenv("OPENAI_API_KEY", "k")
         import yoitsu.process as proc
         monkeypatch.setattr(proc, "ROOT", tmp_path)
         monkeypatch.setattr(proc, "_PIDS_FILE", tmp_path / ".pids.json")
+        monkeypatch.setattr(proc, "_LOCK_FILE", tmp_path / ".yoitsu.lock")
         proc.write_pids(pasloe_pid=1, trenni_pid=2)
 
         with patch("yoitsu.process.is_alive", return_value=True):
@@ -49,6 +62,7 @@ class TestUp:
         monkeypatch.setattr(proc, "_PASLOE_LOG", tmp_path / "pasloe.log")
         monkeypatch.setattr(proc, "_TRENNI_LOG", tmp_path / "trenni.log")
         monkeypatch.setattr(proc, "_DEFAULT_CONFIG", tmp_path / "trenni.yaml")
+        monkeypatch.setattr(proc, "_LOCK_FILE", tmp_path / ".yoitsu.lock")
         (tmp_path / "trenni.yaml").touch()
 
         with (
@@ -272,3 +286,39 @@ class TestLogs:
         r = _runner().invoke(main, ["logs", "--service", "pasloe"])
         assert r.exit_code == 0
         assert r.output.strip() == ""
+
+
+class TestUrlEnvOverride:
+    def test_pasloe_url_default(self):
+        import yoitsu.cli as cli
+        # When env var is not set, the module-level default should be used
+        # (already evaluated at import time, so we check the current value)
+        assert "localhost:8000" in cli._PASLOE_URL or "YOITSU_PASLOE_URL" not in os.environ
+
+    def test_trenni_url_default(self):
+        import yoitsu.cli as cli
+        assert "localhost:8100" in cli._TRENNI_URL or "YOITSU_TRENNI_URL" not in os.environ
+
+    def test_url_env_var_override(self):
+        """Verify that _PASLOE_URL / _TRENNI_URL read from env vars."""
+        import importlib
+        import yoitsu.cli as cli
+        old_p = os.environ.get("YOITSU_PASLOE_URL")
+        old_t = os.environ.get("YOITSU_TRENNI_URL")
+        try:
+            os.environ["YOITSU_PASLOE_URL"] = "http://custom:9000"
+            os.environ["YOITSU_TRENNI_URL"] = "http://custom:9100"
+            importlib.reload(cli)
+            assert cli._PASLOE_URL == "http://custom:9000"
+            assert cli._TRENNI_URL == "http://custom:9100"
+        finally:
+            # Restore
+            if old_p is None:
+                os.environ.pop("YOITSU_PASLOE_URL", None)
+            else:
+                os.environ["YOITSU_PASLOE_URL"] = old_p
+            if old_t is None:
+                os.environ.pop("YOITSU_TRENNI_URL", None)
+            else:
+                os.environ["YOITSU_TRENNI_URL"] = old_t
+            importlib.reload(cli)

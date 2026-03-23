@@ -4,16 +4,16 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import sys
 from pathlib import Path
+from typing import NoReturn
 
 import click
 
 from . import process as proc
 from .client import PasloeClient, TrenniClient
 
-_PASLOE_URL = "http://localhost:8000"
-_TRENNI_URL = "http://localhost:8100"
+_PASLOE_URL = os.environ.get("YOITSU_PASLOE_URL", "http://localhost:8000")
+_TRENNI_URL = os.environ.get("YOITSU_TRENNI_URL", "http://localhost:8100")
 
 
 def _out(data: dict) -> None:
@@ -21,10 +21,10 @@ def _out(data: dict) -> None:
     click.echo(json.dumps(data))
 
 
-def _fail(error: str) -> None:
+def _fail(error: str) -> NoReturn:
     """Print error JSON and exit 1."""
     _out({"ok": False, "error": error})
-    sys.exit(1)
+    raise SystemExit(1)
 
 
 async def _wait_ready(check_fn, *, timeout: float = 10.0, interval: float = 0.5) -> bool:
@@ -60,19 +60,42 @@ def main() -> None:
     """Yoitsu stack management CLI."""
 
 
+async def _do_up(api_key: str, config_path: str | None) -> tuple[int, int]:
+    """Start both services. Returns (pasloe_pid, trenni_pid). Calls _fail on error."""
+    pasloe_pid = proc.start_pasloe()
+
+    ready = await _wait_pasloe_ready(api_key)
+    if not ready:
+        proc.kill_pid(pasloe_pid)
+        _fail("pasloe did not become ready within 10s")
+
+    cfg = Path(config_path).resolve() if config_path else None
+    trenni_pid = proc.start_trenni(config_path=cfg)
+
+    ready = await _wait_trenni_ready()
+    if not ready:
+        proc.kill_pid(trenni_pid)
+        proc.kill_pid(pasloe_pid)
+        _fail("trenni did not become ready within 10s")
+
+    return pasloe_pid, trenni_pid
+
+
 @main.command()
 @click.option("--config", "-c", "config_path", default=None,
               type=click.Path(), help="Path to trenni config YAML")
 def up(config_path: str | None) -> None:
     """Start pasloe + trenni."""
-    # 1. Validate env vars
     for var in ("PASLOE_API_KEY", "OPENAI_API_KEY"):
         if not os.environ.get(var):
             _fail(f"{var} not set")
 
+    lock_fd = proc.acquire_lock()
+    if lock_fd < 0:
+        _fail("Another yoitsu instance is running")
+
     api_key = os.environ["PASLOE_API_KEY"]
 
-    # 2. Check if already running
     pids = proc.read_pids()
     if pids:
         pasloe_alive = proc.is_alive(pids["pasloe"]["pid"])
@@ -84,41 +107,19 @@ def up(config_path: str | None) -> None:
                   "trenni_pid": pids["trenni"]["pid"]})
             return
 
-        # Partial-running state: kill survivor and restart cleanly
         if pasloe_alive:
             proc.kill_pid(pids["pasloe"]["pid"])
         if trenni_alive:
             proc.kill_pid(pids["trenni"]["pid"])
         proc.clear_pids()
 
-    # 4. Start pasloe
     try:
-        pasloe_pid = proc.start_pasloe()
+        pasloe_pid, trenni_pid = asyncio.run(_do_up(api_key, config_path))
+    except SystemExit:
+        raise
     except Exception as exc:
-        _fail(f"Failed to start pasloe: {exc}")
+        _fail(f"Startup failed: {exc}")
 
-    # 5. Wait for pasloe ready
-    ready = asyncio.run(_wait_pasloe_ready(api_key))
-    if not ready:
-        proc.kill_pid(pasloe_pid)
-        _fail("pasloe did not become ready within 10s")
-
-    # 6. Start trenni
-    cfg = Path(config_path).resolve() if config_path else None
-    try:
-        trenni_pid = proc.start_trenni(config_path=cfg)
-    except Exception as exc:
-        proc.kill_pid(pasloe_pid)
-        _fail(f"Failed to start trenni: {exc}")
-
-    # 7. Wait for trenni ready
-    ready = asyncio.run(_wait_trenni_ready())
-    if not ready:
-        proc.kill_pid(trenni_pid)
-        proc.kill_pid(pasloe_pid)
-        _fail("trenni did not become ready within 10s")
-
-    # 8. Write PID file
     proc.write_pids(pasloe_pid=pasloe_pid, trenni_pid=trenni_pid)
     _out({"ok": True, "pasloe_pid": pasloe_pid, "trenni_pid": trenni_pid})
 
