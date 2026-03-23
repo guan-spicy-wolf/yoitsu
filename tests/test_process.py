@@ -51,6 +51,25 @@ class TestPidFile:
         proc.clear_pids()  # file doesn't exist — should not raise
 
 
+class TestLock:
+    def test_acquire_and_release_lock(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(proc, "_LOCK_FILE", tmp_path / ".yoitsu.lock")
+        fd = proc.acquire_lock()
+        assert fd >= 0
+        proc.release_lock(fd)
+
+    def test_acquire_lock_fails_when_already_held(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(proc, "_LOCK_FILE", tmp_path / ".yoitsu.lock")
+        fd1 = proc.acquire_lock()
+        assert fd1 >= 0
+        fd2 = proc.acquire_lock()
+        assert fd2 == -1
+        proc.release_lock(fd1)
+
+    def test_release_lock_negative_fd_is_noop(self):
+        proc.release_lock(-1)  # should not raise
+
+
 class TestStartStop:
     def test_start_pasloe_launches_subprocess(self, tmp_path, monkeypatch):
         monkeypatch.setattr(proc, "_PASLOE_DIR", tmp_path)
@@ -65,6 +84,7 @@ class TestStartStop:
         cmd = args[0][0]
         assert cmd[0] == "uv"
         assert "uvicorn" in cmd
+        assert args[1].get("start_new_session") is True
 
     def test_start_trenni_passes_config(self, tmp_path, monkeypatch):
         monkeypatch.setattr(proc, "_TRENNI_DIR", tmp_path)
