@@ -24,7 +24,7 @@ End-to-end behavior was verified against a real remote repository:
 
 Validated target repository:
 
-- `morrejssc-hub/palimpsest-test`
+- `guan-spicy-wolf/palimpsest-test`
 
 Successful end-to-end output:
 

@@ -2,6 +2,7 @@
 .claude/
 
 # Component repositories (each managed independently)
+yoitsu-contracts/
 palimpsest/
 pasloe/
 trenni/

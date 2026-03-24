@@ -7,9 +7,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(dirname "$SCRIPT_DIR")"
 
 REPOS=(
-    "palimpsest:git@github.com:morrejssc-hub/palimpsest.git"
-    "pasloe:git@github.com:morrejssc-hub/pasloe.git"
-    "trenni:git@github.com:morrejssc-hub/trenni.git"
+    "yoitsu-contracts:git@github.com:guan-spicy-wolf/yoitsu-contracts.git"
+    "palimpsest:git@github.com:guan-spicy-wolf/palimpsest.git"
+    "pasloe:git@github.com:guan-spicy-wolf/pasloe.git"
+    "trenni:git@github.com:guan-spicy-wolf/trenni.git"
 )
 
 for entry in "${REPOS[@]}"; do

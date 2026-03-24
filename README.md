@@ -1,52 +1,88 @@
 # Yoitsu
 
-Self-evolving agent system. An autonomous agent completes external tasks while discovering and improving its own capabilities by modifying an evolvable repository.
+Yoitsu is the umbrella repo for a four-repo agent stack:
 
-See [docs/architecture.md](docs/architecture.md) for system design principles and [docs/adr/](docs/adr/) for architecture decision records.
+- `pasloe` stores the append-only event stream.
+- `trenni` schedules jobs, evaluates spawn conditions, and owns isolation.
+- `palimpsest` runs one job at a time inside the chosen isolation backend.
+- `yoitsu-contracts` defines the shared event, config, condition, and client contracts.
 
-## Components
+The current architecture is documented in [docs/architecture.md](docs/architecture.md). The merged architecture decision record lives in [docs/adr/0001-architecture-redesign.md](docs/adr/0001-architecture-redesign.md).
 
-| Component | Path | Role |
-|-----------|------|------|
-| [palimpsest](https://github.com/morrejssc-hub/palimpsest) | `palimpsest/` | Agent Runtime — single-job execution engine |
-| [trenni](https://github.com/morrejssc-hub/trenni) | `trenni/` | Supervisor — event-driven orchestration and job dispatch |
-| [pasloe](https://github.com/morrejssc-hub/pasloe) | `pasloe/` | Event Store — append-only event log with webhook delivery |
+## Repositories
 
-Each component is a separate git repository. Use `scripts/setup.sh` to clone or update all of them.
+| Repository | Path | Role |
+|---|---|---|
+| [yoitsu-contracts](https://github.com/guan-spicy-wolf/yoitsu-contracts) | `yoitsu-contracts/` | Shared contracts and Pasloe clients |
+| [palimpsest](https://github.com/guan-spicy-wolf/palimpsest) | `palimpsest/` | Runtime for a single job execution |
+| [trenni](https://github.com/guan-spicy-wolf/trenni) | `trenni/` | Scheduler, spawn expansion, replay, checkpointing |
+| [pasloe](https://github.com/guan-spicy-wolf/pasloe) | `pasloe/` | Schema-agnostic event store |
+
+## Architecture Summary
+
+- `Job` and `Task` are separate. A job only succeeds or fails. A task can be `in_progress`, `blocked`, `needs_review`, `complete`, `failed`, or `cancelled`.
+- `spawn()` is the only orchestration primitive. Trenni expands it into child jobs plus a conditional join job.
+- Trenni is split into `state`, `scheduler`, `spawn_handler`, `replay`, `checkpoint`, and `isolation` modules.
+- Isolation is a protocol. `PodmanBackend` is the current implementation.
+- Shared wire contracts live in `yoitsu-contracts`, not as duplicated ad hoc dict parsing in each repo.
 
 ## Quick Start
 
-### Prerequisites
-- Python 3.11+
-- [uv](https://docs.astral.sh/uv/) package manager
-- OpenAI-compatible API key (OpenAI, Kimi, etc.)
+Prerequisites:
 
-### Setup
+- Python 3.11+
+- `uv`
+- Podman if you want to run real isolated jobs
+- `PASLOE_API_KEY`
+- an LLM API key such as `OPENAI_API_KEY`
+
+Setup:
 
 ```bash
-# 1. Clone components
 ./scripts/setup.sh
-
-# 2. Install dependencies
 uv sync
 
-# 3. Set environment variables
 export PASLOE_API_KEY=yoitsu-test-key-2026
 export OPENAI_API_KEY=<your-api-key>
 ```
 
-### Start the Stack
+Start the stack:
 
 ```bash
-# Start pasloe (event store) + trenni (supervisor)
 uv run yoitsu up
-
-# Output: {"ok": true, "pasloe_pid": 12345, "trenni_pid": 12346}
 ```
 
-### Submit Tasks
+Submit tasks:
 
-Create a task file (see `examples/tasks.yaml`):
+```bash
+uv run yoitsu submit examples/tasks.yaml
+```
+
+Inspect status and logs:
+
+```bash
+uv run yoitsu status
+uv run yoitsu logs --service trenni --lines 50
+uv run yoitsu logs --service pasloe --lines 50
+python3 scripts/monitor.py --hours 5
+```
+
+Pause or resume scheduling:
+
+```bash
+uv run yoitsu pause
+uv run yoitsu resume
+```
+
+Stop the stack:
+
+```bash
+uv run yoitsu down
+```
+
+## Task Submission
+
+Yoitsu CLI still accepts a simple YAML task list. Trenni assigns a `task_id` when one is not provided.
 
 ```yaml
 tasks:
@@ -54,75 +90,20 @@ tasks:
     role: "default"
     repo_url: "https://github.com/your-org/your-repo.git"
 
-  - task: "Fix the memory leak in the cache invalidation logic"
+  - task: "Investigate flaky publication guardrails"
     role: "default"
     repo_url: "https://github.com/your-org/your-repo.git"
 ```
 
-Submit tasks:
-
-```bash
-uv run yoitsu submit examples/tasks.yaml
-# Output: {"submitted": 2, "failed": 0, "errors": []}
-```
-
-### Monitor
-
-```bash
-# Check system status
-uv run yoitsu status
-
-# Output:
-# {
-#   "pasloe": {"alive": true, "total_events": 150, "by_type": {...}},
-#   "trenni": {"alive": true, "state": "running", "queue_size": 2, ...}
-# }
-
-# View logs
-uv run yoitsu logs --service pasloe --lines 50
-uv run yoitsu logs --service trenni --lines 50
-
-# Long-running report with Pasloe/Trenni + Podman job visibility
-python3 scripts/monitor.py --hours 5
-
-# Pause/resume job dispatch
-uv run yoitsu pause   # Stop dispatching new jobs
-uv run yoitsu resume  # Resume dispatching
-```
-
-### Quadlet Deployment
-
-```bash
-# Build the Palimpsest job image
-./scripts/build-job-image.sh
-
-# Install/update Quadlet units and start the stack
-./scripts/deploy-quadlet.sh
-
-# Inspect user-systemd + Podman state
-./scripts/quadlet-status.sh
-```
-
-### Stop
-
-```bash
-uv run yoitsu down
-# Output: {"ok": true, "stopped": ["pasloe", "trenni"]}
-```
-
 ## Configuration
 
-### Trenni Configuration
-
-`config/trenni.yaml` configures the Supervisor:
+`config/trenni.yaml` configures scheduling, isolation, and default job settings.
 
 ```yaml
-# Event store connection
 pasloe_url: "http://localhost:8000"
 pasloe_api_key_env: "PASLOE_API_KEY"
 source_id: "trenni-supervisor"
 
-# Podman job runtime
 runtime:
   kind: "podman"
   podman:
@@ -134,11 +115,9 @@ runtime:
     env_allowlist:
       - "OPENAI_API_KEY"
 
-# Concurrency
-max_workers: 4          # Keep low until evo repo is stable
-poll_interval: 2.0      # Event polling interval (seconds)
+max_workers: 4
+poll_interval: 2.0
 
-# Default LLM settings (per-job override supported)
 default_llm:
   model: "kimi-k2.5"
   api_base: "https://coding.dashscope.aliyuncs.com/v1"
@@ -147,113 +126,14 @@ default_llm:
   temperature: 0.2
 ```
 
-### Task File Format
+## Quadlet Deployment
 
-Tasks are submitted via YAML files:
-
-```yaml
-tasks:
-  - task: "Description of what to do"
-    role: "default"                              # Role from evo repo
-    repo_url: "https://github.com/org/repo.git"  # Target repository
-
-  - task: "Another task"
-    role: "default"
-    repo_url: "https://github.com/org/repo.git"
-```
-
-## CLI Reference
-
-All commands output JSON and use exit code 0 (success) or 1 (failure).
-
-### `yoitsu up`
-
-Start pasloe + trenni, wait for readiness (10s timeout).
+For the current rootless Podman + Quadlet development deployment:
 
 ```bash
-uv run yoitsu up [--config PATH]
-
-# Options:
-#   --config  Path to trenni config (default: config/trenni.yaml)
-
-# Output: {"ok": true, "pasloe_pid": 12345, "trenni_pid": 12346}
-# Errors: {"ok": false, "error": "..."}
+./scripts/build-job-image.sh
+./scripts/deploy-quadlet.sh
+./scripts/quadlet-status.sh
 ```
 
-Idempotent: if already running, returns success immediately.
-
-### `yoitsu down`
-
-Stop trenni + pasloe gracefully (POST /control/stop → 30s wait → SIGTERM → SIGKILL).
-
-```bash
-uv run yoitsu down
-
-# Output: {"ok": true, "stopped": ["pasloe", "trenni"]}
-```
-
-Idempotent: if not running, returns success.
-
-### `yoitsu status`
-
-Query system status. Always exits 0.
-
-```bash
-uv run yoitsu status
-
-# Output:
-# {
-#   "pasloe": {
-#     "alive": true,
-#     "total_events": 150,
-#     "by_type": {"task.submit": 50, "job.completed": 30, ...}
-#   },
-#   "trenni": {
-#     "alive": true,
-#     "running": true,
-#     "paused": false,
-#     "running_jobs": 1,
-#     "max_workers": 4,
-#     "pending_jobs": 2,
-#     "ready_queue_size": 0,
-#     "runtime_kind": "podman"
-#   }
-# }
-```
-
-### `yoitsu submit`
-
-Submit tasks from YAML file to pasloe.
-
-```bash
-uv run yoitsu submit TASKS_FILE
-
-# Output: {"submitted": 5, "failed": 0, "errors": []}
-# Errors: {"ok": false, "error": "File not found: ..."}
-```
-
-### `yoitsu pause` / `yoitsu resume`
-
-Control trenni job dispatch.
-
-```bash
-uv run yoitsu pause   # Stop dispatching new jobs (running jobs continue)
-uv run yoitsu resume  # Resume dispatching
-
-# Output: {"ok": true}
-# Errors: {"ok": false, "error": "trenni returned 409: already paused"}
-```
-
-### `yoitsu logs`
-
-Print last N lines from service logs (plain text, not JSON).
-
-```bash
-uv run yoitsu logs --service SERVICE [--lines N]
-
-# Options:
-#   --service  pasloe or trenni (required)
-#   --lines    Number of lines (default: 50)
-
-# Output: (plain text log lines)
-```
+The deployment model is documented in [deploy/quadlet/README.md](deploy/quadlet/README.md).

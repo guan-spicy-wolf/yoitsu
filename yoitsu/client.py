@@ -4,15 +4,19 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
+from yoitsu_contracts.client import AsyncPasloeClient
 
 
-class PasloeClient:
+class PasloeClient(AsyncPasloeClient):
     def __init__(self, url: str, api_key: str) -> None:
-        self._url = url.rstrip("/")
-        self._headers = {"X-API-Key": api_key}
-        self._http = httpx.AsyncClient(
-            base_url=self._url, headers=self._headers, timeout=10.0
+        super().__init__(
+            base_url=url,
+            api_key_env="",
+            api_key=api_key,
+            source_id="yoitsu-cli",
+            timeout=10.0,
         )
+        self._http = self._client
 
     async def check_ready(self) -> bool:
         """Return True if pasloe responds with HTTP 200."""
@@ -35,18 +39,17 @@ class PasloeClient:
     async def post_event(self, *, type_: str, data: dict) -> str | None:
         """POST a single event; return event id or None on failure."""
         try:
-            r = await self._http.post("/events", json={
-                "source_id": "yoitsu-cli",
-                "type": type_,
-                "data": data,
-            })
+            r = await self._http.post(
+                "/events",
+                json={"source_id": self.source_id, "type": type_, "data": data},
+            )
             r.raise_for_status()
             return r.json().get("id")
         except Exception:
             return None
 
     async def aclose(self) -> None:
-        await self._http.aclose()
+        await self.close()
 
 
 class TrenniClient:
