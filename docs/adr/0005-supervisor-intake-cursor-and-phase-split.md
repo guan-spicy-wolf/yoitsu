@@ -1,6 +1,6 @@
 # ADR-0005: 2026-03-25 Supervisor Intake/Execution Phase Split And Cursor Semantics
 
-- Status: Accepted, implementation pending
+- Status: Accepted and implemented
 - Date: 2026-03-25
 - Related: ADR-0002, ADR-0004
 
@@ -75,9 +75,13 @@ distinguish:
 
 ## Implementation Notes
 
-Planned implementation scope:
+Implemented in this pass:
 
-1. move cursor advancement from pre-handle poll path to post-intake commit point
-2. introduce explicit enqueue lifecycle event(s) for replay-safe boundaries
-3. refactor supervisor loop so intake and execution have separate failure domains
-4. add restart regression tests proving no event loss across cursor persistence
+1. moved cursor advancement from pre-handle poll path to post-intake success
+2. introduced `supervisor.job.enqueued` as an explicit intake boundary event
+3. switched replay queue reconstruction to `supervisor.job.enqueued`
+4. added regression tests for cursor progression and replay reconstruction
+
+Still open:
+
+1. extracting intake/execution into separate supervisor loop components
