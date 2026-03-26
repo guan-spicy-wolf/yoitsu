@@ -11,8 +11,8 @@ tasks:
       if any, and say whether the system is blocked by infrastructure,
       orchestration, or task-level issues. Do not change remotes, do not try to
       push commits, and do not edit production code. If you need scratch notes,
-      keep them local to the temporary workspace. Finish by calling
-      task_complete with a concise structured summary and operator recommendation.
+      keep them local to the temporary workspace. Finish with a concise
+      structured summary and operator recommendation, then stop calling tools.
     context:
       role: default
       repo: ""
