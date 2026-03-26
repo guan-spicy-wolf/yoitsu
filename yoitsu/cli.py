@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import subprocess
 from pathlib import Path
 from typing import NoReturn
 
@@ -25,6 +26,38 @@ def _fail(error: str) -> NoReturn:
     """Print error JSON and exit 1."""
     _out({"ok": False, "error": error})
     raise SystemExit(1)
+
+
+def _error_detail(exc: Exception) -> str:
+    if isinstance(exc, subprocess.TimeoutExpired):
+        return f"command timed out: {exc.cmd}"
+    if hasattr(exc, "response") and getattr(exc, "response", None) is not None:
+        response = exc.response
+        body = getattr(response, "text", "")
+        return f"http {response.status_code}: {body[:200] or response.reason_phrase}"
+    return str(exc)
+
+
+def _podman_summary() -> dict:
+    try:
+        result = subprocess.run(
+            [
+                "podman", "ps", "--all",
+                "--filter", "label=io.yoitsu.managed-by=trenni",
+                "--format", "json",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            return {"available": False, "error": result.stderr.strip() or result.stdout.strip()}
+        rows = json.loads(result.stdout or "[]")
+        running = sum(1 for row in rows if row.get("State") == "running")
+        exited = sum(1 for row in rows if row.get("State") == "exited")
+        return {"available": True, "running": running, "exited": exited, "total": len(rows)}
+    except Exception as exc:
+        return {"available": False, "error": str(exc)}
 
 
 async def _wait_ready(check_fn, *, timeout: float = 10.0, interval: float = 0.5) -> bool:
@@ -208,7 +241,7 @@ async def _fetch_status(api_key: str) -> dict:
         await pasloe_client.aclose()
         await trenni_client.aclose()
 
-    return {"pasloe": pasloe_out, "trenni": trenni_out}
+    return {"pasloe": pasloe_out, "trenni": trenni_out, "podman": _podman_summary()}
 
 
 @main.command()
@@ -220,25 +253,112 @@ def status() -> None:
 
 
 @main.command()
-@click.argument("tasks_file", type=click.Path(exists=False))
-def submit(tasks_file: str) -> None:
-    """Submit tasks from a YAML file to pasloe."""
+@click.argument("task_id", required=False)
+def tasks(task_id: str | None) -> None:
+    """Show live tasks, or one task detail plus historical job events."""
+    async def _do() -> dict:
+        trenni = TrenniClient(url=_TRENNI_URL)
+        pasloe = PasloeClient(url=_PASLOE_URL, api_key=os.environ.get("PASLOE_API_KEY", ""))
+        try:
+            if task_id:
+                detail = await trenni.get_task_strict(task_id)
+                history = await pasloe.list_jobs_strict(task_id=task_id)
+                return {"task": detail, "job_events": history}
+            listing = await trenni.get_tasks_strict()
+            return {"tasks": listing}
+        finally:
+            await trenni.aclose()
+            await pasloe.aclose()
+
+    try:
+        _out(asyncio.run(_do()))
+    except Exception as exc:
+        _fail(f"tasks query failed: {_error_detail(exc)}")
+
+
+@main.command()
+@click.argument("job_id", required=False)
+def jobs(job_id: str | None) -> None:
+    """Show historical Pasloe job events, plus live Trenni detail for one job."""
+    async def _do() -> dict:
+        trenni = TrenniClient(url=_TRENNI_URL)
+        pasloe = PasloeClient(url=_PASLOE_URL, api_key=os.environ.get("PASLOE_API_KEY", ""))
+        try:
+            if job_id:
+                detail = await trenni.get_job_strict(job_id)
+                history = await pasloe.list_jobs_strict(job_id=job_id)
+                return {"job": detail, "events": history}
+            listing = await pasloe.list_jobs_strict()
+            return {"jobs": listing}
+        finally:
+            await trenni.aclose()
+            await pasloe.aclose()
+
+    try:
+        _out(asyncio.run(_do()))
+    except Exception as exc:
+        _fail(f"jobs query failed: {_error_detail(exc)}")
+
+
+@main.command()
+@click.option("--limit", default=20, show_default=True, type=int)
+@click.option("--source", default=None)
+@click.option("--type", "type_", default=None)
+def events(limit: int, source: str | None, type_: str | None) -> None:
+    """Show recent committed Pasloe events."""
+    async def _do() -> dict:
+        client = PasloeClient(url=_PASLOE_URL, api_key=os.environ.get("PASLOE_API_KEY", ""))
+        try:
+            return {"events": await client.list_events_strict(limit=limit, source=source, type_=type_)}
+        finally:
+            await client.aclose()
+
+    try:
+        _out(asyncio.run(_do()))
+    except Exception as exc:
+        _fail(f"events query failed: {_error_detail(exc)}")
+
+
+@main.command("llm-stats")
+@click.option("--model", default=None)
+def llm_stats(model: str | None) -> None:
+    """Show Pasloe LLM token and cost statistics."""
+    async def _do() -> dict:
+        client = PasloeClient(url=_PASLOE_URL, api_key=os.environ.get("PASLOE_API_KEY", ""))
+        try:
+            return await client.get_llm_stats_strict(model=model)
+        finally:
+            await client.aclose()
+
+    try:
+        _out(asyncio.run(_do()))
+    except Exception as exc:
+        _fail(f"llm-stats query failed: {_error_detail(exc)}")
+
+
+@main.command()
+@click.argument("input_value")
+@click.option("--goal", "as_goal", is_flag=True, help="Treat INPUT_VALUE as a raw goal string instead of a YAML file")
+def submit(input_value: str, as_goal: bool) -> None:
+    """Submit tasks from a YAML file, or one explicit raw goal string."""
     import yaml
 
     api_key = os.environ.get("PASLOE_API_KEY", "")
+    path = Path(input_value)
 
-    try:
-        raw = Path(tasks_file).read_text()
-    except FileNotFoundError:
-        _fail(f"File not found: {tasks_file}")
-
-    try:
-        doc = yaml.safe_load(raw)
-        tasks = doc["tasks"]
-        if not isinstance(tasks, list):
-            raise ValueError(f"'tasks' must be a list, got {type(tasks).__name__}")
-    except Exception as exc:
-        _fail(f"Invalid YAML: {exc}")
+    if as_goal:
+        tasks = [{"goal": input_value, "context": {}}]
+    else:
+        try:
+            raw = path.read_text()
+            doc = yaml.safe_load(raw)
+            tasks = doc["tasks"]
+            if not isinstance(tasks, list):
+                raise ValueError(f"'tasks' must be a list, got {type(tasks).__name__}")
+        except FileNotFoundError:
+            _fail(f"File not found: {input_value}. Use --goal to submit a raw goal string.")
+        except Exception as exc:
+            _fail(f"Invalid YAML: {exc}")
 
     async def _do_submit() -> dict:
         client = PasloeClient(url=_PASLOE_URL, api_key=api_key)
@@ -264,7 +384,7 @@ def submit(tasks_file: str) -> None:
                     "context": context,
                 }
 
-                event_id = await client.post_event(type_="trigger.external", data=payload)
+                event_id = await client.post_event(type_="trigger.external.received", data=payload)
                 if event_id is None:
                     failed += 1
                     errors.append(goal)
@@ -308,6 +428,163 @@ def resume() -> None:
 
 
 @main.command()
+@click.option("--reset", is_flag=True, help="Wipe runtime data before deploy")
+@click.option("--skip-build", is_flag=True, help="Skip job image build")
+@click.option("--no-start", is_flag=True, help="Install units but don't start services")
+def deploy(reset: bool, skip_build: bool, no_start: bool) -> None:
+    """Deploy via Quadlet (containerized mode)."""
+    script = Path(__file__).resolve().parent.parent / "scripts" / "deploy-quadlet.sh"
+    cmd = [str(script)]
+    if skip_build:
+        cmd.append("--skip-build")
+    if no_start:
+        cmd.append("--no-start")
+    env = dict(os.environ)
+    if reset:
+        env["YOITSU_RESET_RUNTIME"] = "1"
+    result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    if result.returncode != 0:
+        _fail(result.stderr.strip() or result.stdout.strip() or "deploy failed")
+    _out({"ok": True, "stdout": result.stdout.strip()})
+
+
+@main.command()
+def build() -> None:
+    """Build the Palimpsest job container image."""
+    script = Path(__file__).resolve().parent.parent / "scripts" / "build-job-image.sh"
+    if not script.exists():
+        _fail(f"build script not found: {script}")
+    result = subprocess.run([str(script)], text=True)
+    if result.returncode != 0:
+        _fail("image build failed")
+    _out({"ok": True})
+
+
+@main.command()
+@click.option("--hours", default=5.0, show_default=True, type=float,
+              help="Duration in hours (0 = run until Ctrl-C)")
+@click.option("--interval", default=30, show_default=True, type=int,
+              help="Poll interval in seconds")
+def watch(hours: float, interval: int) -> None:
+    """Continuously monitor the stack, print summary on exit."""
+    import signal
+    from datetime import datetime, timedelta
+
+    api_key = os.environ.get("PASLOE_API_KEY", "")
+    stop = False
+
+    def _sigint(*_a: object) -> None:
+        nonlocal stop
+        stop = True
+
+    signal.signal(signal.SIGINT, _sigint)
+
+    start_time = datetime.now()
+    end_time = start_time + timedelta(hours=hours) if hours > 0 else None
+    event_cursor: str | None = None
+    job_counts: dict[str, int] = {"started": 0, "completed": 0, "failed": 0}
+    task_counts: dict[str, int] = {"created": 0, "terminal": 0}
+    errors: list[str] = []
+
+    async def _poll_once(pasloe: PasloeClient, trenni: TrenniClient) -> None:
+        nonlocal event_cursor
+
+        # Poll new events
+        try:
+            params: dict = {"limit": 100}
+            if event_cursor:
+                params["cursor"] = event_cursor
+            r = await pasloe._http.get("/events", params=params)
+            if r.status_code == 200:
+                events = r.json()
+                next_cursor = r.headers.get("X-Next-Cursor")
+                for ev in events:
+                    et = ev.get("type", "")
+                    data = ev.get("data", {})
+                    if et == "supervisor.task.created":
+                        task_counts["created"] += 1
+                        click.echo(f"  [task.created] {data.get('goal', '')[:80]}")
+                    elif et == "agent.job.started":
+                        job_counts["started"] += 1
+                    elif et == "agent.job.completed":
+                        job_counts["completed"] += 1
+                        click.echo(f"  [job.completed] {data.get('job_id', '')[:16]} {data.get('summary', '')[:60]}")
+                    elif et == "agent.job.failed":
+                        job_counts["failed"] += 1
+                        err = data.get("error", "")[:80]
+                        click.echo(f"  [job.failed] {data.get('job_id', '')[:16]} {err}")
+                        errors.append(err)
+                if next_cursor:
+                    event_cursor = next_cursor
+                elif events:
+                    last = events[-1]
+                    ts, eid = last.get("ts", ""), last.get("id", "")
+                    if ts and eid:
+                        event_cursor = f"{ts}|{eid}"
+        except Exception as exc:
+            click.echo(f"  [warn] pasloe poll: {exc}", err=True)
+
+        # Trenni status
+        try:
+            st = await trenni.get_status()
+            if st:
+                click.echo(
+                    f"  [trenni] jobs={st.get('running_jobs')}/{st.get('max_workers')} "
+                    f"pending={st.get('pending_jobs')} ready={st.get('ready_queue_size')} "
+                    f"tasks={len(st.get('tasks', {}))}"
+                )
+        except Exception as exc:
+            click.echo(f"  [warn] trenni: {exc}", err=True)
+
+        # Podman
+        ps = _podman_summary()
+        if ps.get("available"):
+            click.echo(f"  [podman] running={ps['running']} exited={ps['exited']} total={ps['total']}")
+
+    async def _run() -> None:
+        pasloe = PasloeClient(url=_PASLOE_URL, api_key=api_key)
+        trenni = TrenniClient(url=_TRENNI_URL)
+        try:
+            while not stop:
+                if end_time and datetime.now() >= end_time:
+                    break
+                elapsed = (datetime.now() - start_time).total_seconds()
+                remaining = (end_time - datetime.now()).total_seconds() if end_time else float("inf")
+                click.echo(
+                    f"[watch] {elapsed / 60:.0f}min | "
+                    f"tasks={task_counts['created']} jobs: "
+                    f"started={job_counts['started']} ok={job_counts['completed']} fail={job_counts['failed']}"
+                )
+                await _poll_once(pasloe, trenni)
+                # interruptible sleep
+                for _ in range(interval):
+                    if stop or (end_time and datetime.now() >= end_time):
+                        break
+                    await asyncio.sleep(1)
+        finally:
+            await pasloe.aclose()
+            await trenni.aclose()
+
+    asyncio.run(_run())
+
+    # Print summary
+    elapsed = (datetime.now() - start_time).total_seconds()
+    total_jobs = job_counts["completed"] + job_counts["failed"]
+    rate = f"{job_counts['completed'] / total_jobs * 100:.0f}%" if total_jobs else "n/a"
+    summary = {
+        "duration_minutes": round(elapsed / 60, 1),
+        "tasks_created": task_counts["created"],
+        "jobs_started": job_counts["started"],
+        "jobs_completed": job_counts["completed"],
+        "jobs_failed": job_counts["failed"],
+        "success_rate": rate,
+        "recent_errors": errors[-10:],
+    }
+    click.echo("\n=== Watch Summary ===")
+    click.echo(json.dumps(summary, indent=2))
+
+
+@main.command()
 @click.option("--service", type=click.Choice(["pasloe", "trenni", "all"]),
               default="all", show_default=True)
 @click.option("--lines", default=100, show_default=True, type=int)
@@ -328,3 +605,15 @@ def logs(service: str, lines: int) -> None:
             click.echo("\n".join(tail))
         except FileNotFoundError:
             pass  # return empty, no error
+
+
+@main.command()
+def setup() -> None:
+    """Clone or update all component repos + submodules."""
+    script = Path(__file__).resolve().parent.parent / "scripts" / "setup.sh"
+    if not script.exists():
+        _fail(f"setup script not found: {script}")
+    result = subprocess.run([str(script)], text=True)
+    if result.returncode != 0:
+        _fail("setup failed")
+    _out({"ok": True})

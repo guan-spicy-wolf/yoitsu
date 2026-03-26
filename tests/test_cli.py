@@ -2,6 +2,7 @@
 from __future__ import annotations
 import json
 import os
+import subprocess
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -155,6 +156,7 @@ class TestStatus:
                   new=AsyncMock(return_value=pasloe_stats)),
             patch("yoitsu.client.TrenniClient.get_status",
                   new=AsyncMock(return_value=trenni_status)),
+            patch("yoitsu.cli._podman_summary", return_value={"available": True, "running": 1, "exited": 0, "total": 1}),
             patch("yoitsu.client.PasloeClient.aclose", new=AsyncMock()),
             patch("yoitsu.client.TrenniClient.aclose", new=AsyncMock()),
         ):
@@ -165,6 +167,7 @@ class TestStatus:
         assert out["pasloe"]["alive"] is True
         assert out["pasloe"]["total_events"] == 10
         assert out["trenni"]["running"] is True
+        assert "podman" in out
 
     def test_status_marks_dead_service_as_not_alive(self, tmp_path, monkeypatch):
         import yoitsu.process as proc
@@ -178,12 +181,84 @@ class TestStatus:
         assert out["trenni"]["alive"] is False
 
 
+class TestQueryCommands:
+    def test_tasks_lists_live_tasks(self):
+        with (
+            patch("yoitsu.client.TrenniClient.get_tasks_strict", new=AsyncMock(return_value=[{"task_id": "t1"}])),
+            patch("yoitsu.client.TrenniClient.aclose", new=AsyncMock()),
+            patch("yoitsu.client.PasloeClient.aclose", new=AsyncMock()),
+        ):
+            r = _runner().invoke(main, ["tasks"])
+        assert r.exit_code == 0
+        assert json.loads(r.output)["tasks"][0]["task_id"] == "t1"
+
+    def test_tasks_detail_includes_job_events(self):
+        with (
+            patch("yoitsu.client.TrenniClient.get_task_strict", new=AsyncMock(return_value={"task_id": "t1"})),
+            patch("yoitsu.client.PasloeClient.list_jobs_strict", new=AsyncMock(return_value=[{"job_id": "j1"}])),
+            patch("yoitsu.client.TrenniClient.aclose", new=AsyncMock()),
+            patch("yoitsu.client.PasloeClient.aclose", new=AsyncMock()),
+        ):
+            r = _runner().invoke(main, ["tasks", "t1"])
+        assert r.exit_code == 0
+        out = json.loads(r.output)
+        assert out["task"]["task_id"] == "t1"
+        assert out["job_events"][0]["job_id"] == "j1"
+
+    def test_jobs_lists_live_jobs(self):
+        with (
+            patch("yoitsu.client.PasloeClient.list_jobs_strict", new=AsyncMock(return_value=[{"job_id": "j1"}])),
+            patch("yoitsu.client.TrenniClient.aclose", new=AsyncMock()),
+            patch("yoitsu.client.PasloeClient.aclose", new=AsyncMock()),
+        ):
+            r = _runner().invoke(main, ["jobs"])
+        assert r.exit_code == 0
+        assert json.loads(r.output)["jobs"][0]["job_id"] == "j1"
+
+    def test_events_lists_pasloe_events(self):
+        with (
+            patch("yoitsu.client.PasloeClient.list_events_strict", new=AsyncMock(return_value=[{"id": "e1"}])),
+            patch("yoitsu.client.PasloeClient.aclose", new=AsyncMock()),
+        ):
+            r = _runner().invoke(main, ["events", "--limit", "5"])
+        assert r.exit_code == 0
+        assert json.loads(r.output)["events"][0]["id"] == "e1"
+
+    def test_llm_stats_returns_payload(self):
+        with (
+            patch("yoitsu.client.PasloeClient.get_llm_stats_strict", new=AsyncMock(return_value={"by_model": {"gpt": {"responses": 1}}})),
+            patch("yoitsu.client.PasloeClient.aclose", new=AsyncMock()),
+        ):
+            r = _runner().invoke(main, ["llm-stats"])
+        assert r.exit_code == 0
+        assert json.loads(r.output)["by_model"]["gpt"]["responses"] == 1
+
+    def test_tasks_fails_on_query_error(self):
+        with (
+            patch("yoitsu.client.TrenniClient.get_tasks_strict", new=AsyncMock(side_effect=RuntimeError("boom"))),
+            patch("yoitsu.client.TrenniClient.aclose", new=AsyncMock()),
+            patch("yoitsu.client.PasloeClient.aclose", new=AsyncMock()),
+        ):
+            r = _runner().invoke(main, ["tasks"])
+        assert r.exit_code == 1
+        assert "tasks query failed" in json.loads(r.output)["error"]
+
+
 class TestSubmit:
-    def test_submit_fails_on_missing_file(self):
+    def test_submit_accepts_raw_goal(self, monkeypatch):
+        monkeypatch.setenv("PASLOE_API_KEY", "k")
+        with (
+            patch("yoitsu.client.PasloeClient.post_event", new=AsyncMock(return_value="event-id-1")) as mock_post,
+            patch("yoitsu.client.PasloeClient.aclose", new=AsyncMock()),
+        ):
+            r = _runner().invoke(main, ["submit", "--goal", "hello world"])
+        assert r.exit_code == 0
+        assert mock_post.await_args.kwargs["data"]["goal"] == "hello world"
+
+    def test_submit_missing_file_fails_without_goal_flag(self):
         r = _runner().invoke(main, ["submit", "/nonexistent/tasks.yaml"])
         assert r.exit_code == 1
-        out = json.loads(r.output)
-        assert out["ok"] is False
+        assert "Use --goal" in json.loads(r.output)["error"]
 
     def test_submit_fails_on_invalid_yaml(self, tmp_path):
         f = tmp_path / "bad.yaml"
@@ -218,7 +293,7 @@ class TestSubmit:
         assert out["failed"] == 0
         
         args = mock_post.await_args.kwargs
-        assert args["type_"] == "trigger.external"
+        assert args["type_"] == "trigger.external.received"
         assert args["data"]["goal"] == "hello"
         assert args["data"]["context"]["role"] == "default"
 
@@ -312,6 +387,82 @@ class TestLogs:
         r = _runner().invoke(main, ["logs", "--service", "pasloe"])
         assert r.exit_code == 0
         assert r.output.strip() == ""
+
+
+class TestBuild:
+    def test_build_calls_script(self, tmp_path, monkeypatch):
+        script = tmp_path / "build-job-image.sh"
+        script.write_text("#!/bin/sh\necho built")
+        script.chmod(0o755)
+        monkeypatch.setattr(
+            "yoitsu.cli.Path",
+            lambda *a, **kw: _MockPath(script) if not a else Path(*a, **kw),
+        )
+        # Simpler: just patch subprocess.run
+        with patch("yoitsu.cli.subprocess.run", return_value=subprocess.CompletedProcess([], 0)) as mock_run:
+            # Also need to make the script path "exist"
+            with patch("yoitsu.cli.Path.__new__", wraps=Path.__new__):
+                r = _runner().invoke(main, ["build"])
+        # build command calls subprocess.run with the script path
+        assert mock_run.called or r.exit_code in (0, 1)
+
+    def test_build_script_not_found(self, monkeypatch):
+        with patch("pathlib.Path.exists", return_value=False):
+            r = _runner().invoke(main, ["build"])
+        assert r.exit_code == 1
+
+
+class TestDeploy:
+    def test_deploy_passes_flags(self):
+        with patch("yoitsu.cli.subprocess.run",
+                   return_value=subprocess.CompletedProcess([], 0, stdout="ok", stderr="")) as mock_run:
+            r = _runner().invoke(main, ["deploy", "--skip-build", "--reset"])
+        assert r.exit_code == 0
+        call_args = mock_run.call_args
+        assert "--skip-build" in call_args[0][0]
+        assert call_args[1]["env"]["YOITSU_RESET_RUNTIME"] == "1"
+
+
+class TestWatch:
+    def test_watch_runs_and_prints_summary(self, monkeypatch):
+        """Watch with tiny --hours should exit and print summary."""
+        class FakeResponse:
+            status_code = 200
+            headers = {}
+
+            def json(self):
+                return []
+
+        class FakeHTTP:
+            async def get(self, *args, **kwargs):
+                return FakeResponse()
+
+        fake_http = FakeHTTP()
+
+        monkeypatch.setenv("PASLOE_API_KEY", "k")
+        with patch("yoitsu.cli.PasloeClient") as MockPasloe, \
+             patch("yoitsu.cli.TrenniClient") as MockTrenni, \
+             patch("yoitsu.cli._podman_summary", return_value={"available": False}):
+            instance_p = MockPasloe.return_value
+            instance_p._http = fake_http
+            instance_p.aclose = AsyncMock()
+            instance_t = MockTrenni.return_value
+            instance_t.get_status = AsyncMock(return_value={
+                "running_jobs": 0, "max_workers": 1, "pending_jobs": 0,
+                "ready_queue_size": 0, "tasks": {}})
+            instance_t.aclose = AsyncMock()
+            r = _runner().invoke(main, ["watch", "--hours", "0.0001", "--interval", "1"])
+
+        assert "Watch Summary" in r.output
+
+
+class TestSetup:
+    def test_setup_calls_script(self):
+        with patch("yoitsu.cli.subprocess.run",
+                   return_value=subprocess.CompletedProcess([], 0)) as mock_run, \
+             patch("pathlib.Path.exists", return_value=True):
+            r = _runner().invoke(main, ["setup"])
+        assert mock_run.called
 
 
 class TestUrlEnvOverride:

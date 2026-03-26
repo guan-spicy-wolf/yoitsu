@@ -36,6 +36,12 @@ class PasloeClient(AsyncPasloeClient):
         except Exception:
             return None
 
+    async def get_stats_strict(self) -> dict[str, Any]:
+        r = await self._http.get("/events/stats")
+        r.raise_for_status()
+        raw = r.json()
+        return {"total_events": raw["total_events"], "by_type": raw["by_type"]}
+
     async def post_event(self, *, type_: str, data: dict) -> str | None:
         """POST a single event; return event id or None on failure."""
         try:
@@ -47,6 +53,68 @@ class PasloeClient(AsyncPasloeClient):
             return r.json().get("id")
         except Exception:
             return None
+
+    async def list_events(self, *, limit: int = 20, source: str | None = None, type_: str | None = None) -> list[dict[str, Any]] | None:
+        try:
+            params: dict[str, Any] = {"limit": limit}
+            if source:
+                params["source"] = source
+            if type_:
+                params["type"] = type_
+            r = await self._http.get("/events", params=params)
+            r.raise_for_status()
+            return r.json()
+        except Exception:
+            return None
+
+    async def list_events_strict(self, *, limit: int = 20, source: str | None = None, type_: str | None = None) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {"limit": limit}
+        if source:
+            params["source"] = source
+        if type_:
+            params["type"] = type_
+        r = await self._http.get("/events", params=params)
+        r.raise_for_status()
+        return r.json()
+
+    async def list_jobs(self, **params: Any) -> list[dict[str, Any]] | None:
+        try:
+            r = await self._http.get("/jobs", params={k: v for k, v in params.items() if v is not None})
+            r.raise_for_status()
+            return r.json()
+        except Exception:
+            return None
+
+    async def list_jobs_strict(self, **params: Any) -> list[dict[str, Any]]:
+        r = await self._http.get("/jobs", params={k: v for k, v in params.items() if v is not None})
+        r.raise_for_status()
+        return r.json()
+
+    async def list_tasks(self, **params: Any) -> list[dict[str, Any]] | None:
+        try:
+            r = await self._http.get("/tasks", params={k: v for k, v in params.items() if v is not None})
+            r.raise_for_status()
+            return r.json()
+        except Exception:
+            return None
+
+    async def list_tasks_strict(self, **params: Any) -> list[dict[str, Any]]:
+        r = await self._http.get("/tasks", params={k: v for k, v in params.items() if v is not None})
+        r.raise_for_status()
+        return r.json()
+
+    async def get_llm_stats(self, **params: Any) -> dict[str, Any] | None:
+        try:
+            r = await self._http.get("/llm/stats", params={k: v for k, v in params.items() if v is not None})
+            r.raise_for_status()
+            return r.json()
+        except Exception:
+            return None
+
+    async def get_llm_stats_strict(self, **params: Any) -> dict[str, Any]:
+        r = await self._http.get("/llm/stats", params={k: v for k, v in params.items() if v is not None})
+        r.raise_for_status()
+        return r.json()
 
     async def aclose(self) -> None:
         await self.close()
@@ -73,6 +141,58 @@ class TrenniClient:
             return r.json()
         except Exception:
             return None
+
+    async def get_tasks(self, **params: Any) -> list[dict[str, Any]] | None:
+        try:
+            r = await self._http.get("/control/tasks", params={k: v for k, v in params.items() if v is not None})
+            r.raise_for_status()
+            return r.json()
+        except Exception:
+            return None
+
+    async def get_tasks_strict(self, **params: Any) -> list[dict[str, Any]]:
+        r = await self._http.get("/control/tasks", params={k: v for k, v in params.items() if v is not None})
+        r.raise_for_status()
+        return r.json()
+
+    async def get_task(self, task_id: str) -> dict[str, Any] | None:
+        try:
+            r = await self._http.get(f"/control/tasks/{task_id}")
+            r.raise_for_status()
+            return r.json()
+        except Exception:
+            return None
+
+    async def get_task_strict(self, task_id: str) -> dict[str, Any]:
+        r = await self._http.get(f"/control/tasks/{task_id}")
+        r.raise_for_status()
+        return r.json()
+
+    async def get_jobs(self, **params: Any) -> list[dict[str, Any]] | None:
+        try:
+            r = await self._http.get("/control/jobs", params={k: v for k, v in params.items() if v is not None})
+            r.raise_for_status()
+            return r.json()
+        except Exception:
+            return None
+
+    async def get_jobs_strict(self, **params: Any) -> list[dict[str, Any]]:
+        r = await self._http.get("/control/jobs", params={k: v for k, v in params.items() if v is not None})
+        r.raise_for_status()
+        return r.json()
+
+    async def get_job(self, job_id: str) -> dict[str, Any] | None:
+        try:
+            r = await self._http.get(f"/control/jobs/{job_id}")
+            r.raise_for_status()
+            return r.json()
+        except Exception:
+            return None
+
+    async def get_job_strict(self, job_id: str) -> dict[str, Any]:
+        r = await self._http.get(f"/control/jobs/{job_id}")
+        r.raise_for_status()
+        return r.json()
 
     async def post_control(self, endpoint: str) -> str | None:
         """POST to /control/<endpoint>. Returns None on success, error string on failure."""

@@ -85,7 +85,7 @@ def main() -> int:
                     f"{pasloe_url}/events",
                     json={
                         "source_id": event_source_id,
-                        "type": "trigger.external",
+                        "type": "trigger.external.received",
                         "data": payload,
                     },
                     headers={
