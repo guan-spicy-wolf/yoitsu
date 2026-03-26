@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import httpx
 import json
 import os
 import subprocess
@@ -36,6 +37,15 @@ def _error_detail(exc: Exception) -> str:
         body = getattr(response, "text", "")
         return f"http {response.status_code}: {body[:200] or response.reason_phrase}"
     return str(exc)
+
+
+async def _optional_live_detail(fetch_coro, *, label: str) -> tuple[dict | None, list[str]]:
+    try:
+        return await fetch_coro, []
+    except httpx.HTTPStatusError as exc:
+        if exc.response is not None and exc.response.status_code == 404:
+            return None, [f"{label} not present in live Trenni state"]
+        raise
 
 
 def _podman_summary() -> dict:
@@ -126,9 +136,8 @@ async def _do_up(api_key: str, config_path: str | None) -> tuple[int, int]:
               type=click.Path(), help="Path to trenni config YAML")
 def up(config_path: str | None) -> None:
     """Start pasloe + trenni."""
-    for var in ("PASLOE_API_KEY", "OPENAI_API_KEY"):
-        if not os.environ.get(var):
-            _fail(f"{var} not set")
+    if not os.environ.get("PASLOE_API_KEY"):
+        _fail("PASLOE_API_KEY not set")
 
     lock_fd = proc.acquire_lock()
     if lock_fd < 0:
@@ -261,9 +270,15 @@ def tasks(task_id: str | None) -> None:
         pasloe = PasloeClient(url=_PASLOE_URL, api_key=os.environ.get("PASLOE_API_KEY", ""))
         try:
             if task_id:
-                detail = await trenni.get_task_strict(task_id)
+                detail, warnings = await _optional_live_detail(
+                    trenni.get_task_strict(task_id),
+                    label=f"task {task_id}",
+                )
                 history = await pasloe.list_jobs_strict(task_id=task_id)
-                return {"task": detail, "job_events": history}
+                payload = {"task": detail, "job_events": history}
+                if warnings:
+                    payload["warnings"] = warnings
+                return payload
             listing = await trenni.get_tasks_strict()
             return {"tasks": listing}
         finally:
@@ -285,9 +300,15 @@ def jobs(job_id: str | None) -> None:
         pasloe = PasloeClient(url=_PASLOE_URL, api_key=os.environ.get("PASLOE_API_KEY", ""))
         try:
             if job_id:
-                detail = await trenni.get_job_strict(job_id)
+                detail, warnings = await _optional_live_detail(
+                    trenni.get_job_strict(job_id),
+                    label=f"job {job_id}",
+                )
                 history = await pasloe.list_jobs_strict(job_id=job_id)
-                return {"job": detail, "events": history}
+                payload = {"job": detail, "events": history}
+                if warnings:
+                    payload["warnings"] = warnings
+                return payload
             listing = await pasloe.list_jobs_strict()
             return {"jobs": listing}
         finally:
@@ -582,6 +603,17 @@ def watch(hours: float, interval: int) -> None:
     }
     click.echo("\n=== Watch Summary ===")
     click.echo(json.dumps(summary, indent=2))
+
+
+@main.command()
+@click.option("--interval", default=5, show_default=True, type=int,
+              help="Refresh interval in seconds")
+def tui(interval: int) -> None:
+    """Interactive TUI dashboard (q to quit, r to refresh)."""
+    from .tui import run_tui
+    api_key = os.environ.get("PASLOE_API_KEY", "")
+    run_tui(pasloe_url=_PASLOE_URL, trenni_url=_TRENNI_URL,
+            api_key=api_key, interval=interval)
 
 
 @main.command()

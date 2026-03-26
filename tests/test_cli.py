@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from click.testing import CliRunner
 
@@ -19,7 +20,6 @@ def _runner() -> CliRunner:
 class TestUp:
     def test_up_fails_if_env_var_missing(self, monkeypatch):
         monkeypatch.delenv("PASLOE_API_KEY", raising=False)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         r = _runner().invoke(main, ["up"])
         assert r.exit_code == 1
         out = json.loads(r.output)
@@ -28,7 +28,6 @@ class TestUp:
 
     def test_up_fails_if_lock_held(self, tmp_path, monkeypatch):
         monkeypatch.setenv("PASLOE_API_KEY", "k")
-        monkeypatch.setenv("OPENAI_API_KEY", "k")
         import yoitsu.process as proc
         monkeypatch.setattr(proc, "_LOCK_FILE", tmp_path / ".yoitsu.lock")
         with patch("yoitsu.process.acquire_lock", return_value=-1):
@@ -40,7 +39,6 @@ class TestUp:
 
     def test_up_succeeds_when_both_already_alive(self, tmp_path, monkeypatch):
         monkeypatch.setenv("PASLOE_API_KEY", "k")
-        monkeypatch.setenv("OPENAI_API_KEY", "k")
         import yoitsu.process as proc
         monkeypatch.setattr(proc, "ROOT", tmp_path)
         monkeypatch.setattr(proc, "_PIDS_FILE", tmp_path / ".pids.json")
@@ -56,7 +54,6 @@ class TestUp:
 
     def test_up_starts_services_and_writes_pids(self, tmp_path, monkeypatch):
         monkeypatch.setenv("PASLOE_API_KEY", "k")
-        monkeypatch.setenv("OPENAI_API_KEY", "k")
         import yoitsu.process as proc
         monkeypatch.setattr(proc, "ROOT", tmp_path)
         monkeypatch.setattr(proc, "_PIDS_FILE", tmp_path / ".pids.json")
@@ -85,7 +82,6 @@ class TestUp:
 
     def test_up_kills_pasloe_if_trenni_start_fails(self, monkeypatch):
         monkeypatch.setenv("PASLOE_API_KEY", "k")
-        monkeypatch.setenv("OPENAI_API_KEY", "k")
 
         killed: list[int] = []
         with (
@@ -205,6 +201,22 @@ class TestQueryCommands:
         assert out["task"]["task_id"] == "t1"
         assert out["job_events"][0]["job_id"] == "j1"
 
+    def test_tasks_detail_degrades_when_live_state_missing(self):
+        response = MagicMock(status_code=404, text="not found", reason_phrase="Not Found")
+        error = httpx.HTTPStatusError("not found", request=MagicMock(), response=response)
+        with (
+            patch("yoitsu.client.TrenniClient.get_task_strict", new=AsyncMock(side_effect=error)),
+            patch("yoitsu.client.PasloeClient.list_jobs_strict", new=AsyncMock(return_value=[{"job_id": "j1"}])),
+            patch("yoitsu.client.TrenniClient.aclose", new=AsyncMock()),
+            patch("yoitsu.client.PasloeClient.aclose", new=AsyncMock()),
+        ):
+            r = _runner().invoke(main, ["tasks", "t1"])
+        assert r.exit_code == 0
+        out = json.loads(r.output)
+        assert out["task"] is None
+        assert out["job_events"][0]["job_id"] == "j1"
+        assert "warnings" in out
+
     def test_jobs_lists_live_jobs(self):
         with (
             patch("yoitsu.client.PasloeClient.list_jobs_strict", new=AsyncMock(return_value=[{"job_id": "j1"}])),
@@ -214,6 +226,22 @@ class TestQueryCommands:
             r = _runner().invoke(main, ["jobs"])
         assert r.exit_code == 0
         assert json.loads(r.output)["jobs"][0]["job_id"] == "j1"
+
+    def test_jobs_detail_degrades_when_live_state_missing(self):
+        response = MagicMock(status_code=404, text="not found", reason_phrase="Not Found")
+        error = httpx.HTTPStatusError("not found", request=MagicMock(), response=response)
+        with (
+            patch("yoitsu.client.TrenniClient.get_job_strict", new=AsyncMock(side_effect=error)),
+            patch("yoitsu.client.PasloeClient.list_jobs_strict", new=AsyncMock(return_value=[{"job_id": "j1"}])),
+            patch("yoitsu.client.TrenniClient.aclose", new=AsyncMock()),
+            patch("yoitsu.client.PasloeClient.aclose", new=AsyncMock()),
+        ):
+            r = _runner().invoke(main, ["jobs", "j1"])
+        assert r.exit_code == 0
+        out = json.loads(r.output)
+        assert out["job"] is None
+        assert out["events"][0]["job_id"] == "j1"
+        assert "warnings" in out
 
     def test_events_lists_pasloe_events(self):
         with (
