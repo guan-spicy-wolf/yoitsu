@@ -1,4 +1,4 @@
-# Open Items (2026-03-26)
+# Open Items (2026-03-27)
 
 ## From ADR Implementation
 
@@ -10,13 +10,23 @@
    - Current: eval job falls back to `default` role when `eval_spec.role` is omitted
    - Priority: P1 (directly affects eval output quality)
 
-3. **ADR-0007**: Context window and cost budget hard stops
-   - Current: only `max_iterations` implemented as hard budget
-   - Priority: P1 (cost and context exhaustion need the same `budget_exhausted` path)
+3. **ADR-0014**: Hard timeout for in-process evo Python tools
+   - Current: `tool_timeout_seconds` is only a hard guarantee for timeout-capable paths (for example subprocess-backed tools like `bash`)
+   - Gap: generic Python evo tools still execute in-process with no reliable interruption boundary
+   - Priority: P1 (requires separate isolation/execution design)
+
+4. **ADR-0014**: Update example task specs and smoke fixtures to require explicit root budgets
+   - Current: the runtime now expects root-task budget as a first-class field, but examples and ad hoc smoke inputs are not all updated
+   - Priority: P1 (operator ergonomics, prevents confusing failed root tasks)
+
+5. **ADR-0014**: Clarify join-job budget policy
+   - Current: join jobs inherit the parent task's budget defaults, which effectively gives the continuation/join path a fresh per-job budget rather than a strict "remaining task budget"
+   - Gap: this is a policy choice but not yet documented or explicitly accepted
+   - Priority: P2 (architecture clarity)
 
 ## From Original Issue List
 
-4. **Issue 5**: Verify `publication.py:56` `result.get("status") == "failed"` branch
+6. **Issue 5**: Verify `publication.py:56` `result.get("status") == "failed"` branch
    - ADR-0006 implemented status propagation; confirm this guard now triggers correctly
    - File: `palimpsest/palimpsest/stages/publication.py:56`
    - Priority: P2 (verify, likely already working)

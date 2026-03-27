@@ -23,9 +23,9 @@ The runtime split is:
 `Job` is the execution unit. It runs one Palimpsest pipeline. It terminates via
 job lifecycle events:
 
-- `job.completed`
-- `job.failed`
-- `job.cancelled`
+- `agent.job.completed`
+- `agent.job.failed`
+- `agent.job.cancelled`
 
 `Task` is the logical work unit representing a goal. Its lifecycle is event-driven
 and strictly managed by Trenni. Current states are:
@@ -51,7 +51,7 @@ job outcomes plus optional eval output.
 
 ## Spawn Is The Only Orchestration Primitive
 
-The runtime never executes child work inline. It only emits `job.spawn.request`.
+The runtime never executes child work inline. It only emits `agent.job.spawn_request`.
 
 Trenni expands one spawn request into:
 
