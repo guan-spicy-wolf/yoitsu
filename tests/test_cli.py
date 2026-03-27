@@ -279,9 +279,17 @@ class TestSubmit:
             patch("yoitsu.client.PasloeClient.post_event", new=AsyncMock(return_value="event-id-1")) as mock_post,
             patch("yoitsu.client.PasloeClient.aclose", new=AsyncMock()),
         ):
-            r = _runner().invoke(main, ["submit", "--goal", "hello world"])
+            r = _runner().invoke(main, ["submit", "--goal", "--budget", "0.8", "--team", "backend", "hello world"])
         assert r.exit_code == 0
         assert mock_post.await_args.kwargs["data"]["goal"] == "hello world"
+        assert mock_post.await_args.kwargs["data"]["budget"] == 0.8
+        assert mock_post.await_args.kwargs["data"]["team"] == "backend"
+
+    def test_submit_raw_goal_requires_budget(self, monkeypatch):
+        monkeypatch.setenv("PASLOE_API_KEY", "k")
+        r = _runner().invoke(main, ["submit", "--goal", "hello world"])
+        assert r.exit_code == 1
+        assert "--budget > 0" in json.loads(r.output)["error"]
 
     def test_submit_missing_file_fails_without_goal_flag(self):
         r = _runner().invoke(main, ["submit", "/nonexistent/tasks.yaml"])
@@ -308,7 +316,7 @@ class TestSubmit:
     def test_submit_posts_all_tasks(self, tmp_path, monkeypatch):
         monkeypatch.setenv("PASLOE_API_KEY", "k")
         f = tmp_path / "tasks.yaml"
-        f.write_text("tasks:\n  - goal: hello\n    context:\n      role: default\n")
+        f.write_text("tasks:\n  - goal: hello\n    team: backend\n    budget: 0.9\n    context:\n      role: default\n")
 
         with patch("yoitsu.client.PasloeClient.post_event",
                    new=AsyncMock(return_value="event-id-1")) as mock_post, \
@@ -323,6 +331,8 @@ class TestSubmit:
         args = mock_post.await_args.kwargs
         assert args["type_"] == "trigger.external.received"
         assert args["data"]["goal"] == "hello"
+        assert args["data"]["team"] == "backend"
+        assert args["data"]["budget"] == 0.9
         assert args["data"]["context"]["role"] == "default"
 
     def test_submit_normalizes_repo_url_aliases(self, tmp_path, monkeypatch):

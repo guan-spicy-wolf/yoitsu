@@ -359,8 +359,10 @@ def llm_stats(model: str | None) -> None:
 
 @main.command()
 @click.argument("input_value")
+@click.option("--budget", type=float, default=0.0, help="Allocated budget for a raw goal submission")
+@click.option("--team", default="default", help="Team for a raw goal submission")
 @click.option("--goal", "as_goal", is_flag=True, help="Treat INPUT_VALUE as a raw goal string instead of a YAML file")
-def submit(input_value: str, as_goal: bool) -> None:
+def submit(input_value: str, budget: float, team: str, as_goal: bool) -> None:
     """Submit tasks from a YAML file, or one explicit raw goal string."""
     import yaml
 
@@ -368,7 +370,9 @@ def submit(input_value: str, as_goal: bool) -> None:
     path = Path(input_value)
 
     if as_goal:
-        tasks = [{"goal": input_value, "context": {}}]
+        if budget <= 0:
+            _fail("Raw goal submission requires --budget > 0")
+        tasks = [{"goal": input_value, "team": team, "budget": budget, "context": {}}]
     else:
         try:
             raw = path.read_text()
@@ -390,6 +394,8 @@ def submit(input_value: str, as_goal: bool) -> None:
             for task in tasks:
                 raw = dict(task)
                 goal = raw.pop("goal", raw.pop("task", ""))
+                team = str(raw.pop("team", "") or "").strip() or "default"
+                budget = raw.pop("budget", 0.0)
                 
                 context = raw.pop("context", raw)
                 if not isinstance(context, dict):
@@ -401,7 +407,9 @@ def submit(input_value: str, as_goal: bool) -> None:
                     context["init_branch"] = context.pop("branch")
 
                 payload = {
+                    "team": team,
                     "goal": goal,
+                    "budget": float(budget) if isinstance(budget, (int, float)) else 0.0,
                     "context": context,
                 }
 
