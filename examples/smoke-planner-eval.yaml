@@ -1,0 +1,11 @@
+tasks:
+  - goal: >-
+      Create a new file smoke/SMOKE.txt in this repository. The file must
+      contain exactly one line with no trailing whitespace: smoke: ok
+      Do not modify any other file. Commit the change.
+    team: default
+    budget: 0.80
+    context:
+      repo: https://github.com/guan-spicy-wolf/yoitsu.git
+      init_branch: master
+      new_branch: true
