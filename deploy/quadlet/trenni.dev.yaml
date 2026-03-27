@@ -1,6 +1,7 @@
 pasloe_url: "http://127.0.0.1:8000"
 pasloe_api_key_env: "PASLOE_API_KEY"
 source_id: "trenni-supervisor"
+evo_root: "/workspace/evo"
 
 runtime:
   kind: "podman"
