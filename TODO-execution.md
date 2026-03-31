@@ -10,7 +10,7 @@
 - [x] Task 6: Remove cost-based termination in Palimpsest (ADR-0004 D1, D7) ✅
 - [x] Task 7: Emit budget_variance observation in Trenni (ADR-0010 D5) ✅
 - [x] Task 8: Allow spawn without role, default to planner (ADR-0008 D1) ✅
-- [ ] Task 9: Rename workspace_fn to preparation_fn (ADR-0009 D1, D2) - Deferred to follow-up PR
+- [x] Task 9: Rename workspace_fn to preparation_fn (ADR-0009 D1, D2) ✅
 - [x] Task 10: Add trigger evaluator scaffold (ADR-0008 D2, D3) ✅
 - [x] Task 11: Run all tests and verify integration ✅
 
@@ -20,6 +20,8 @@
 - yoitsu-contracts: 16 passed
 - palimpsest: 82 passed
 - trenni: 87 passed
+
+**All tasks completed!**
 
 **Commits:**
 
@@ -34,7 +36,8 @@ palimpsest:
 ├── feat: export PreparationConfig (ADR-0009 D1)
 ├── feat: add max_cost parameter to role decorator (ADR-0004 D1a)
 ├── feat: remove cost-based termination (ADR-0004 D1, D7)
-└── feat: emit actual cost in JobCompletedData (ADR-0010 D5)
+├── feat: emit actual cost in JobCompletedData (ADR-0010 D5)
+└── feat: rename workspace_fn to preparation_fn (ADR-0009 D1, D2)
 
 palimpsest/evo:
 └── feat: add max_cost to all role definitions (ADR-0004 D1a)
@@ -45,6 +48,3 @@ trenni:
 ├── feat: add trigger evaluator scaffold (ADR-0008 D2, D3)
 └── feat: emit budget_variance observation (ADR-0010 D5)
 ```
-
-**Deferred to follow-up PR:**
-- Task 9: workspace_fn → preparation_fn rename (large refactor)
