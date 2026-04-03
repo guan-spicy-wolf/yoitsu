@@ -69,7 +69,32 @@
 - [x] Replay 路径测试 (使用 canonical 字段)
 - [x] Cleanup 路径测试 (container 清理)
 
-## Batch 6: GitHub Client and External Trigger Ingestion (In Progress)
+## Batch 5: Observation Loop Closure ✅
+
+### Step 1: 定 observation 读模型 ✅
+- [x] 创建 Pasloe observation domain
+- [x] 定义 BudgetVarianceDetail 读模型
+- [x] 实现时间窗口查询接口
+- [x] 实现聚合查询接口 (aggregate, by_role)
+- [x] 创建数据库迁移
+
+### Step 2: 补发射面 ✅
+- [x] 盘点现有 observation.* 信号
+  - budget_variance: trenni/supervisor._emit_budget_variance
+  - preparation_failure: 新增 palimpsest/stages/preparation.py
+  - tool_retry: 待实现（当前无 tool 重试机制）
+- [x] budget_variance 发射路径测试
+- [x] preparation_failure 发射点实现
+- [x] preparation_failure 发射路径测试
+
+### Step 3: 激活闭环 ✅
+- [x] 修复 model_name_from_event_type 支持 observation.* 事件
+- [x] 验证 domain registry 包含 observation
+- [x] 验证 detail 创建和 payload 序列化
+- [x] 验证聚合逻辑正确性
+- [x] 端到端测试通过 (5 tests)
+
+## Batch 6: GitHub Client and External Trigger Ingestion ✅
 
 ### Step 1: 统一 GitHub Client ✅
 - [x] 盘点当前 GitHub API 调用位置
@@ -116,28 +141,103 @@
 - [x] Context provider 渲染 GitHub 上下文
 - [x] 完整流程测试: external event -> trigger -> context rendering
 
-### Step 1: 定 observation 读模型 ✅
-- [x] 创建 Pasloe observation domain
-- [x] 定义 BudgetVarianceDetail 读模型
-- [x] 实现时间窗口查询接口
-- [x] 实现聚合查询接口 (aggregate, by_role)
-- [x] 创建数据库迁移
+## Batch 7: Artifact Runtime Adoption (Phase 4) ✅
 
-### Step 2: 补发射面 ✅
-- [x] 盘点现有 observation.* 信号
-  - budget_variance: trenni/supervisor._emit_budget_variance
-  - preparation_failure: 新增 palimpsest/stages/preparation.py
-  - tool_retry: 待实现（当前无 tool 重试机制）
-- [x] budget_variance 发射路径测试
-- [x] preparation_failure 发射点实现
-- [x] preparation_failure 发射路径测试
+### Step 1: 盘点现有 Artifact 基础设施 ✅
+- [x] ArtifactRef / ArtifactBinding 定义
+- [x] ArtifactBackend 接口
+- [x] LocalFSBackend 实现
+- [x] 当前 publication 流程
 
-### Step 3: 激活闭环 ✅
-- [x] 修复 model_name_from_event_type 支持 observation.* 事件
-- [x] 验证 domain registry 包含 observation
-- [x] 验证 detail 创建和 payload 序列化
-- [x] 验证聚合逻辑正确性
-- [x] 端到端测试通过 (5 tests)
+### Step 2: Preparation Copy-In ✅
+- [x] WorkspaceConfig.input_artifacts 字段
+- [x] SpawnedJob.input_artifacts 字段
+- [x] run_preparation() 中的 _materialize_input_artifacts()
+- [x] from_enqueued_data/to_enqueued_data/to_launched_data 包含 input_artifacts
+
+### Step 3: Publication ArtifactBinding ✅
+- [x] publish_results() 返回 (git_ref, artifact_bindings) 元组
+- [x] create_artifact_bindings() 存储 workspace tree
+- [x] JobCompletedData.artifact_bindings 字段
+- [x] runner.py 传递 artifact_bindings 到 JobCompletedData
+
+### Step 4: 非 Git 任务 Smoke Path ✅
+- [x] 纯 artifact 输入/输出验证
+- [x] 非 Git 原生任务 smoke test (7 tests)
+  - test_non_git_artifact_roundtrip: 完整 roundtrip
+  - test_artifact_binding_in_job_completed_event: event 携带 bindings
+  - test_blob_artifact_roundtrip: blob 单独验证
+  - test_artifact_store_env_variable: env 配置验证
+  - test_git_publication_returns_artifacts_for_repoless_workspace: P1 fix
+  - test_default_store_root_consistency: P1 fix
+  - test_artifact_materialization_after_clone: P1 fix
+
+### P1 Fixes Applied ✅
+
+#### Issue 1: git_publication() returns artifact_bindings for repoless workspace
+- `palimpsest/runtime/roles.py:117` - Added `create_artifact_bindings()` call when `git.Repo()` fails
+- Before: `(None, [])` returned, bypassing artifact output
+- After: `(None, artifact_bindings)` returned for repoless workspace
+
+#### Issue 2: input_artifacts propagated from SpawnedJob to runtime spec
+- `trenni/runtime_builder.py:72` - Added `input_artifacts` parameter and merge into `workspace`
+- `trenni/supervisor.py:295` - Added `input_artifacts` to `_launch_from_spawned()`
+- `trenni/supervisor.py:985` - Added `input_artifacts` to `_launch()`
+- Before: `job.input_artifacts` dropped entirely
+- After: Propagated through full chain to `JobConfig.workspace.input_artifacts`
+
+#### Issue 3: Default store root consistency
+- `palimpsest/stages/publication.py:96` - Changed default to env or `~/.cache/palimpsest/artifacts`
+- `palimpsest/stages/preparation.py:68` - Materialization happens AFTER clone
+- Before: Publication wrote to `<workspace>/.artifacts`, preparation read from env default
+- After: Both use same default store root
+- Before: Artifacts materialized before clone (conflict)
+- After: Clone first, then overlay artifacts
+
+### Second Round P1 Fixes ✅
+
+#### Issue 1: input_artifacts enters canonical trigger/spawn protocol
+- `yoitsu-contracts/events.py:TriggerData` - Added `input_artifacts` field
+- `yoitsu-contracts/events.py:SpawnTaskData` - Added `input_artifacts` field
+- `yoitsu-contracts/events.py:SupervisorJobEnqueuedData` - Added `input_artifacts` field
+- `yoitsu-contracts/events.py:SupervisorJobLaunchedData` - Added `input_artifacts` field
+- `trenni/spawn_handler.py` - Pass `input_artifacts` from `SpawnTaskData` to `SpawnedJob`
+- `yoitsu/cli.py` - Accept `input_artifacts` in submit command
+- Before: External triggers/spawns cannot declare input artifacts
+- After: Full protocol chain from trigger to runtime spec
+
+#### Issue 2: input_artifacts preserved through enqueue replay
+- `SupervisorJobEnqueuedData.input_artifacts` field added
+- `model_validate().model_dump()` now preserves `input_artifacts`
+- Before: Field dropped during schema validation, lost on restart
+- After: Field preserved through full replay cycle
+
+#### Issue 3: Complete trigger/spawn -> runtime spec chain
+- All canonical protocol models now include `input_artifacts`
+- RuntimeSpecBuilder propagates from `SpawnedJob.input_artifacts`
+- Before: Chain broken at multiple points
+- After: End-to-end propagation verified by tests
+
+### Third Round P1 Fixes ✅
+
+#### Issue 1: spawn tool accepts input_artifacts
+- `palimpsest/runtime/tools.py:_SPAWN_SCHEMA` - Added `input_artifacts` to schema
+- `palimpsest/runtime/tools.py:_normalize_spawn_task()` - Parse and pass `input_artifacts`
+- Before: LLM spawn tool cannot declare artifact inputs
+- After: Child tasks can receive artifacts from parent
+- Test: `test_spawn_tool_accepts_input_artifacts`
+
+#### Issue 2: trigger path propagates input_artifacts to SpawnedJob
+- `trenni/supervisor.py:448` - Added `input_artifacts` when constructing root `SpawnedJob`
+- Before: `TriggerData.input_artifacts` ignored by `_process_trigger()`
+- After: Root job receives artifacts from external trigger
+- Test: `test_trigger_data_input_artifacts_to_spawned_job`
+
+#### Issue 3: launched-event replay preserves input_artifacts
+- `trenni/supervisor.py:1482` - Read `input_artifacts` from event data in `_register_replayed_launch()`
+- Before: Field lost when replaying launched jobs after restart
+- After: Restored correctly from event store
+- Test: `test_launched_event_replay_preserves_input_artifacts`
 
 ## 验收状态
 
@@ -149,9 +249,13 @@
 - [x] 文档只解释原则和边界，不再解释代码已经能直接表达的细节 ✅
 - [x] 字段搬运逻辑收敛到 SpawnedJob 转换方法中 ✅
 - [x] Budget 不再因入口、继承、重放路径发生漂移 ✅
+- [x] Preparation 能从 ArtifactStore 读取 artifacts ✅ (Phase 4 Step 2)
+- [x] Publication 能产出 ArtifactBinding ✅ (Phase 4 Step 3)
+- [x] 非 Git 任务 smoke path 通过 ✅ (Phase 4 Step 4)
 
 ## 测试结果
 
-- **Trenni tests**: 193 passed ✅
-- **Palimpsest tests**: 156 passed ✅
-- **Yoitsu tests**: 47 passed ✅
+- **Yoitsu-contracts tests**: 91 passed ✅ (85 + 6 new protocol tests)
+- **Trenni tests**: 205 passed ✅ (200 + 5 propagation tests)
+- **Palimpsest tests**: 185 passed ✅ (177 + 8 artifact smoke tests)
+- **Root tests**: 47 passed ✅

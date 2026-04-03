@@ -886,6 +886,7 @@ def submit(input_value: str, budget: float, team: str, as_goal: bool) -> None:
                 params = raw.pop("params", {})
                 eval_spec = raw.pop("eval_spec", None)
                 sha = raw.pop("sha", None)
+                input_artifacts = raw.pop("input_artifacts", [])  # ADR-0013
 
                 # Check for forbidden legacy fields
                 forbidden = {"prompt", "task", "repo_url", "branch", "context"}
@@ -911,6 +912,7 @@ def submit(input_value: str, budget: float, team: str, as_goal: bool) -> None:
                     "params": params,
                     "sha": sha,
                     "eval_spec": eval_spec,
+                    "input_artifacts": input_artifacts,  # ADR-0013
                 }
 
                 event_id = await client.post_event(type_="trigger.external.received", data=payload)

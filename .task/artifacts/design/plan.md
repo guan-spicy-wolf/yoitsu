@@ -39,26 +39,31 @@
 
 ## 4. Phase 1: Autonomous Review Loop
 
-当前状态：
+目标：把 observation 和 reviewer 连接成真正自动运行的优化闭环。
 
-- `observation_threshold` 事件已能触发 `optimizer`
-- `optimizer` 角色、prompt、`ReviewProposal` schema、proposal->trigger 转换都已存在
-- 当前剩余缺口是：`optimizer` 的实际输出还没有在运行时主链中被消费
+动作：
 
-当前阶段只做最后一段闭环：
-
-- 在主链中解析 `optimizer` 输出为 `ReviewProposal`
-- 将 `ReviewProposal` 自动转成普通 optimization trigger/task
-- 补 `observation_threshold -> optimizer -> proposal -> optimization task` 端到端 smoke
+- 将 observation 聚合结果真正注入 review task，而不是只停留在查询接口
+- 定义 review task 的标准输出结构：
+  - 问题归类
+  - 证据事件
+  - 可执行提案
+  - 后续优化任务模板
+- 让 review task 输出可直接转成普通优化 task
+- 建一条 smoke：
+  - observation 累积
+  - review trigger 触发
+  - reviewer 读取聚合上下文
+  - 产出结构化 proposal
 
 完成标志：
 
-- `optimizer` 不再只是“能被触发”，而是能自动产出下一张优化任务
-- `ReviewProposal.from_json_str()` 和 `review_proposal_to_trigger()` 不再只停留在模型/测试层
+- review 不再只是“能手动调用”，而是能被 observation 自动驱动
+- proposal 输出可直接被后续 task 消费
 
 建议工单：
 
-`autonomous-review-loop-output-closure`
+`autonomous-review-loop`
 
 ## 5. Phase 2: Execution Safety Boundary
 
