@@ -96,8 +96,17 @@
   - pr_labeled_to_trigger
 - [x] Label-to-role mapping
 
-### Step 3: Reviewer GitHub 上下文
-- [ ] 为 reviewer role 提供 GitHub 上下文
+### Step 3: Reviewer GitHub 上下文 ✅
+- [x] 定义 GitHub 上下文结构
+  - GitHubPRContext
+  - GitHubIssueContext
+- [x] 创建 GitHub context loader
+  - evo/contexts/loaders.py: github_context provider
+- [x] 更新 reviewer role
+  - 添加 github_context section
+- [x] 更新 external events 注入 github_context
+  - pr_labeled_to_trigger
+  - issue_labeled_to_trigger
 
 ### Step 4: 端到端 Smoke Test
 - [ ] external event -> task -> output 通过
