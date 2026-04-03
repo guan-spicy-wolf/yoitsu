@@ -108,8 +108,13 @@
   - pr_labeled_to_trigger
   - issue_labeled_to_trigger
 
-### Step 4: 端到端 Smoke Test
-- [ ] external event -> task -> output 通过
+### Step 4: 端到端 Smoke Test ✅
+- [x] PR labeled event -> TriggerData 转换
+- [x] Issue labeled event -> TriggerData 转换
+- [x] CI failure event -> TriggerData 转换
+- [x] GitHub context 注入到 params
+- [x] Context provider 渲染 GitHub 上下文
+- [x] 完整流程测试: external event -> trigger -> context rendering
 
 ### Step 1: 定 observation 读模型 ✅
 - [x] 创建 Pasloe observation domain
