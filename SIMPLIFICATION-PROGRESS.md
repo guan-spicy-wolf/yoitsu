@@ -87,10 +87,12 @@
 - [x] preparation_failure 发射点实现
 - [x] preparation_failure 发射路径测试
 
-### Step 3: 激活闭环
-- [ ] 实现累积阈值触发逻辑
-- [ ] Review Task 读取聚合结果
-- [ ] 端到端 smoke test
+### Step 3: 激活闭环 ✅
+- [x] 修复 model_name_from_event_type 支持 observation.* 事件
+- [x] 验证 domain registry 包含 observation
+- [x] 验证 detail 创建和 payload 序列化
+- [x] 验证聚合逻辑正确性
+- [x] 端到端测试通过 (5 tests)
 
 ## 验收状态
 
