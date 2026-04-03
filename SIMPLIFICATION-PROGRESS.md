@@ -69,7 +69,28 @@
 - [x] Replay 路径测试 (使用 canonical 字段)
 - [x] Cleanup 路径测试 (container 清理)
 
-## Batch 5: Observation Loop Closure (In Progress)
+## Batch 6: GitHub Client and External Trigger Ingestion (In Progress)
+
+### Step 1: 统一 GitHub Client ✅
+- [x] 盘点当前 GitHub API 调用位置
+  - create_pr tool: tools.py (已迁移)
+  - context loaders: 无 GitHub 调用
+  - reviewer role: 无 GitHub 调用
+- [x] 创建 palimpsest/runtime/github_client.py
+- [x] 实现 PR 创建/查询接口
+- [x] 实现 Issue 评论接口
+- [x] 更新 create_pr tool 使用 GitHubClient
+- [x] 添加 GitHubClient 测试
+
+### Step 2: 外部 Trigger 接入
+- [ ] 定义外部事件格式
+- [ ] 添加 external trigger handler
+
+### Step 3: Reviewer GitHub 上下文
+- [ ] 为 reviewer role 提供 GitHub 上下文
+
+### Step 4: 端到端 Smoke Test
+- [ ] external event -> task -> output 通过
 
 ### Step 1: 定 observation 读模型 ✅
 - [x] 创建 Pasloe observation domain
