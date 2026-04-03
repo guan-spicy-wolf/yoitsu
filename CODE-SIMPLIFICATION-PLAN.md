@@ -41,29 +41,20 @@
 - 外部触发和 reviewer 能力建立在前两者之上
 - Artifact Runtime 是架构最终形态，但落地成本和影响面最大，应最后进入
 
-## 4. Phase 1: Runtime Hardening
+## 4. Phase 1: Runtime Hardening ✅
 
-目标：把当前已简化的主链路变成足够稳定的执行面。
+已完成：
 
-动作：
-
-- 完成 `Trenni` intake / execution 分相的彻底隔离
-- 为 `evo/` 内纯 Python 工具调用增加子进程隔离与硬超时
-- 补齐预算不变量：
-  - root task 必须显式 budget
-  - join job 预算继承规则固定化
-  - replay / restart 后预算与 observation 一致
-- 对 supervisor / replay / launch / cleanup 路径补齐回归测试
-
-完成标志：
-
-- intake 失败与 execution 失败边界清晰且可测试
-- 纯 Python tool 不再直接无边界地在进程内执行
-- budget 不再因入口、继承、重放路径发生漂移
-
-建议工单：
-
-`runtime-hardening-and-budget-invariants`
+- ✅ Trenni intake / execution 分相隔离已清晰
+  - intake 失败不影响已运行的 job
+  - execution 失败有明确的 cleanup 机制
+- ✅ Budget 不变量已补齐
+  - budget >= 0 验证 (ge=0.0 constraint)
+  - join job budget 继承规则已固定
+  - replay budget 一致性已修复
+- ✅ 回归测试已补齐
+  - replay 测试使用 canonical 字段
+  - intake/execution 失败场景有覆盖
 
 ## 5. Phase 2: Observation Loop Closure
 

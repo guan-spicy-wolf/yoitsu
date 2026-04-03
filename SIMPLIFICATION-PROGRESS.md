@@ -44,6 +44,30 @@
 - [x] 更新 supervisor.py 使用转换方法
 - [x] 简化事件创建逻辑 (不再手动逐字段拷贝)
 - [x] 简化 replay 逻辑 (不再手动逐字段重建)
+- [x] Budget replay fidelity 已修复
+
+## Batch 4: Runtime Hardening (In Progress)
+
+### Task 1: Intake / Execution 分相隔离
+- [ ] 分析当前 intake/execution 边界
+- [ ] 明确 intake path 只做事件验证和 spawn planning
+- [ ] 明确 execution path 只做 runtime 操作
+- [ ] 分离错误处理逻辑
+
+### Task 2: Tool 子进程隔离与硬超时
+- [ ] 评估当前 builtin tools 风险等级
+- [ ] 为高风险工具增加超时机制
+
+### Task 3: Budget 不变量补齐 ✅
+- [x] Budget >= 0 验证 (ge=0.0 constraint)
+- [x] Join job budget 继承规则已正确实现
+- [x] Replay budget 一致性已修复
+
+### Task 4: 补齐回归测试 ✅
+- [x] Intake 失败场景测试 (budget 验证失败)
+- [x] Execution 失败场景测试 (launch 失败 cleanup)
+- [x] Replay 路径测试 (使用 canonical 字段)
+- [x] Cleanup 路径测试 (container 清理)
 
 ## 验收状态
 
@@ -54,6 +78,7 @@
 - [x] 主链路模块数量更少，数据搬运层级更浅 ✅
 - [x] 文档只解释原则和边界，不再解释代码已经能直接表达的细节 ✅
 - [x] 字段搬运逻辑收敛到 SpawnedJob 转换方法中 ✅
+- [x] Budget 不再因入口、继承、重放路径发生漂移 ✅
 
 ## 测试结果
 
