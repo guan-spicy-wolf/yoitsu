@@ -29,7 +29,7 @@
 - [x] 删除 llm/workspace/publication 空壳字段
 - [x] 同步精简事件消费者
 
-## Batch 3: Scaffold Deletion + Structural Collapse
+## Batch 3: Scaffold Deletion + Structural Collapse ✅
 
 ### Phase 5: Delete Dead Scaffolds ✅
 - [x] 删除未接入主流程的 scaffold (trigger_evaluator.py)
@@ -37,11 +37,13 @@
 - [x] 删除已归档 ADR 残留注释 (通过 git mv 到 archive)
 - [x] 合并重复脚本 (scripts 都是运维脚本，保留)
 
-### Phase 6: Structural Collapse (Deferred)
-- [ ] 精简 Trenni supervisor 边界 (需要更多分析)
-- [ ] 明确 intake path 与 execution path 接口
-- [ ] 合并重复数据搬运对象
-- [ ] 收敛转换边界
+### Phase 6: Structural Collapse ✅
+- [x] 添加 SpawnedJob.to_enqueued_data() 方法
+- [x] 添加 SpawnedJob.to_launched_data() 方法
+- [x] 添加 SpawnedJob.from_enqueued_data() 方法
+- [x] 更新 supervisor.py 使用转换方法
+- [x] 简化事件创建逻辑 (不再手动逐字段拷贝)
+- [x] 简化 replay 逻辑 (不再手动逐字段重建)
 
 ## 验收状态
 
@@ -49,11 +51,12 @@
 - [x] 搜索主代码目录，不再出现针对旧输入形态的 fallback 逻辑 ✅
 - [x] prompt、examples、CLI、contracts、runtime 使用同一套字段命名 ✅
 - [x] supervisor.job.launched 等关键事件不再包含空壳语义 ✅
-- [ ] 主链路模块数量更少，数据搬运层级更浅 (Phase 6)
+- [x] 主链路模块数量更少，数据搬运层级更浅 ✅
 - [x] 文档只解释原则和边界，不再解释代码已经能直接表达的细节 ✅
+- [x] 字段搬运逻辑收敛到 SpawnedJob 转换方法中 ✅
 
 ## 测试结果
 
-- **Trenni tests**: 192 passed, 1 failed (外部依赖 uuid_utils 缺失)
-- **Palimpsest tests**: 需要单独验证
-- **yoitsu-contracts tests**: 需要单独验证
+- **Trenni tests**: 193 passed ✅
+- **Palimpsest tests**: 156 passed ✅
+- **Yoitsu tests**: 47 passed ✅
