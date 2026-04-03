@@ -1,96 +1,152 @@
-# Yoitsu Code Simplification Plan
+# Yoitsu Next Plan
 
 日期：2026-04-03
-状态：第一步已完成，进入第二步
-范围：`yoitsu` / `yoitsu-contracts` / `trenni` / `palimpsest`
+状态：代码简化阶段已完成，进入下一执行阶段
+范围：`yoitsu` / `yoitsu-contracts` / `trenni` / `palimpsest` / `pasloe`
 
-## 1. 当前状态
+## 1. 已完成前置
 
-第一步 `spawn-contract-cutover-without-compatibility` 已通过。
+代码简化阶段已经完成，当前主链路已满足：
 
-已完成结果：
+- canonical contract 已统一
+- legacy 输入与 fallback 已清除
+- 事件面已收紧
+- 主链路字段搬运已明显收敛
+- 三套运行环境已加载同一份 source contracts
 
-- `Spawn / Trigger / CLI / runtime / tests` 已统一到 canonical contract
-- 只认：`goal / role / budget / repo / init_branch / team / params / eval_spec / sha`
-- 已移除并拒绝 legacy 输入：`prompt / task / repo_url / branch / context / params.repo / params.branch / params.init_branch`
-- `goal` 与 `role` 已收紧为必填并 fail-fast
-- `params` 只允许 role 内部参数，不再承载任务语义
-- `yoitsu` / `trenni` / `palimpsest` 三套环境已实际加载同一份 source `yoitsu-contracts`
+下一步不再继续做“为了简化而简化”的改造，而是转向把架构文档里已经确定的能力真正闭环。
 
-## 2. 下一目标
+## 2. 总目标
 
-下一步只做两件事：
+下一阶段只做四类事：
 
-1. `Event Surface Pruning`
-2. `Runtime Object Collapse`
+1. 运行时硬化
+2. 自观察闭环落地
+3. 外部协作入口落地
+4. Artifact Runtime 接管验证
 
-建议工单名：
-
-`event-surface-pruning-and-runtime-object-collapse`
-
-## 3. Phase A: Event Surface Pruning
-
-目标：把事件面压到“真实、最小、稳定”。
-
-动作：
-
-- 收紧 `SupervisorJobLaunchedData`
-- 收紧 `SupervisorJobEnqueuedData`
-- 清理 replay、control API、CLI、tests 中仍依赖旧事件外形的代码
-- 删除不被消费、只增加搬运成本的冗余字段
-- 统一关键事件的命名和字段语义，避免同一事实在不同事件里重复换名
-
-完成标志：
-
-- 启动/入队事件只保留当前运行时真正需要和真正消费的字段
-- replay 与 live path 消费的是同一套事件形状
-- CLI/控制面不再依赖 ad hoc dict 字段猜测
-
-## 4. Phase B: Runtime Object Collapse
-
-目标：减少核心链路中的重复对象和字段搬运。
-
-动作：
-
-- 审视并压缩这几个对象之间的重复：
-  - `TaskRecord`
-  - `SpawnedJob`
-  - `SpawnDefaults`
-  - `JobConfig`
-  - `SupervisorJobLaunchedData`
-  - `SupervisorJobEnqueuedData`
-- 明确唯一的“任务语义 -> 运行时规格”转换边界
-- 尽量把重复赋值收敛到一个 builder / translator，而不是散落在 `supervisor`、`spawn_handler`、`runtime_builder` 多处
-- 清理只为中转存在、但不增加表达力的字段
-
-完成标志：
-
-- `goal / role / repo / init_branch / team / evo_sha / budget` 不再跨多个对象重复散射搬运
-- `Supervisor` 主链路里的字段转换层级显著变浅
-- `runtime_builder` 成为清晰、单一的运行时规格出口
-
-## 5. 约束
-
-- 不回退到兼容写法
-- 不为了保留历史 payload 而新增 fallback
-- 不扩写说明性文档，能在代码里表达的就留在代码里
-- 归档历史讨论，不把历史重新带回主路径
-
-## 6. 验收标准
-
-完成这一步后，应满足：
-
-- 关键 supervisor 事件的字段数量下降，但信息密度更高
-- replay / enqueue / launch / runtime build 的主链路对象更少
-- 搜索主代码路径时，明显减少重复字段搬运与重复赋值
-- 三仓受影响测试通过
-- 最小运行时校验通过：导入的 contracts、事件 schema、runtime path 保持一致
-
-## 7. 执行顺序
+## 3. 执行顺序
 
 按下面顺序推进：
 
-1. 先改事件模型
-2. 再改事件消费者与 replay
-3. 再折叠运行时对象边界
-4. 最后统一测试和最小运行时验证
+1. 先做 `Runtime Hardening`
+2. 再做 `Observation Loop Closure`
+3. 再做 `GitHub / External Trigger Integration`
+4. 最后做 `Artifact Runtime Adoption`
+
+原因：
+
+- 运行时硬化会影响后续所有能力
+- 自优化闭环依赖稳定的 observation 和查询面
+- 外部触发和 reviewer 能力建立在前两者之上
+- Artifact Runtime 是架构最终形态，但落地成本和影响面最大，应最后进入
+
+## 4. Phase 1: Runtime Hardening
+
+目标：把当前已简化的主链路变成足够稳定的执行面。
+
+动作：
+
+- 完成 `Trenni` intake / execution 分相的彻底隔离
+- 为 `evo/` 内纯 Python 工具调用增加子进程隔离与硬超时
+- 补齐预算不变量：
+  - root task 必须显式 budget
+  - join job 预算继承规则固定化
+  - replay / restart 后预算与 observation 一致
+- 对 supervisor / replay / launch / cleanup 路径补齐回归测试
+
+完成标志：
+
+- intake 失败与 execution 失败边界清晰且可测试
+- 纯 Python tool 不再直接无边界地在进程内执行
+- budget 不再因入口、继承、重放路径发生漂移
+
+建议工单：
+
+`runtime-hardening-and-budget-invariants`
+
+## 5. Phase 2: Observation Loop Closure
+
+目标：把 ADR-0010 里“结构化信号 -> Review Task -> Proposal -> 优化 Task”的闭环真正打通。
+
+动作：
+
+- 补齐并审视 `observation.*` 发射面，确保信号足够稳定
+- 为 `Pasloe` 增加时间窗口与聚合查询接口，供 Review Task 读取
+- 让 reviewer / review task 能直接消费 observation 聚合结果
+- 激活基于阈值累积的 review trigger
+- 为闭环建立 smoke test：
+  - observation 累积
+  - trigger 触发 review task
+  - review task 读取聚合上下文
+
+完成标志：
+
+- review task 不再只是概念存在，而是真能由 observation 驱动产生
+- system health 的核心代理指标是预算预测精度，而不是人工读日志
+
+建议工单：
+
+`observation-loop-closure`
+
+## 6. Phase 3: GitHub / External Trigger Integration
+
+目标：把系统从“手工提交任务”扩展为“能接外部协作事件并回写协作结果”。
+
+动作：
+
+- 实现统一 GitHub client，供 tools 与 context 共用
+- 落地 PR 查询、评论读取、PR 创建后的后续动作接口
+- 接入外部 trigger：
+  - CI/CD failure
+  - 带特定标签的 issue / PR 事件
+- 落地 reviewer role 的 GitHub 上下文输入
+- 评估自动 merge / approval 的安全边界，但默认先只做只读 + PR/评论写入
+
+完成标志：
+
+- 任务来源不再只有手工 YAML / raw goal
+- reviewer 能基于真实 GitHub 上下文输出结构化审阅结果
+
+建议工单：
+
+`github-client-and-external-trigger-ingestion`
+
+## 7. Phase 4: Artifact Runtime Adoption
+
+目标：让 `Artifact Store` 从“contracts 与 backend 已存在”走到“runtime 主链路真的消费它”。
+
+动作：
+
+- 在 `Palimpsest` preparation 中接入 artifact copy-in / materialization
+- 在 publication 中产出真实 `ArtifactBinding`
+- 为非 Git 任务建立最小 smoke 路径
+- 对 `blob/tree` 的 runtime 流转补齐端到端验证
+- 用一个明确的非 Git 任务场景验证：
+  - 报告/日志任务
+  - 或 Factorio / 大文件状态类任务
+
+完成标志：
+
+- `git_ref` 退化为兼容收据，而不是唯一交付通道
+- 非 Git 原生任务可以在不依赖 Git 的情况下完成输入物化与结果固化
+
+建议工单：
+
+`artifact-runtime-adoption`
+
+## 8. 约束
+
+- 不回退到兼容层思路
+- 不为临时方便重新引入多套协议字段
+- 不把实现细节再堆回主文档
+- 新计划优先体现为代码、测试与 smoke path，不体现为文档扩写
+
+## 9. 验收方式
+
+每个 phase 完成时都应同时满足：
+
+- 代码路径闭环
+- 受影响测试通过
+- 至少一条最小 smoke path 通过
+- 当前行为能由代码与测试直接表达，而不是依赖额外说明
