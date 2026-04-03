@@ -475,7 +475,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.27" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "textual", specifier = ">=0.70" },
-    { name = "yoitsu-contracts", directory = "yoitsu-contracts" },
+    { name = "yoitsu-contracts", editable = "yoitsu-contracts" },
 ]
 
 [package.metadata.requires-dev]
@@ -487,7 +487,7 @@ dev = [
 [[package]]
 name = "yoitsu-contracts"
 version = "0.1.0"
-source = { directory = "yoitsu-contracts" }
+source = { editable = "yoitsu-contracts" }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic" },

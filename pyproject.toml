@@ -24,7 +24,7 @@ dev = [
 package = true
 
 [tool.uv.sources]
-yoitsu-contracts = { path = "yoitsu-contracts" }
+yoitsu-contracts = { path = "yoitsu-contracts", editable = true }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
