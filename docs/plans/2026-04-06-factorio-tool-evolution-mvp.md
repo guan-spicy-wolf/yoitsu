@@ -394,4 +394,674 @@ cd palimpsest && uv run pytest tests/test_tool_pattern.py -v
 
 ---
 
-由于 token 限制，剩余 Task 3-9 分成下一个输出块。现在 commit 前 3 个 task 的 plan 片段。
+## Task 3: 让 context provider loader 支持 team 子目录
+
+**Files:**
+- Modify: `palimpsest/palimpsest/runtime/contexts.py:48-75`
+- Modify: `palimpsest/tests/test_context_loader.py`
+
+**Step 1: 修改 resolve_context_functions 签名**
+
+```python
+# contexts.py:48
+def resolve_context_functions(
+    evo_root: str | Path,
+    requested: list[str],
+    team: str = "default",  # 新增参数
+) -> dict[str, Callable]:
+    """Scan evo/teams/<team>/contexts/ first, then evo/contexts/ for fallback."""
+```
+
+**Step 2: 实现 team-first 扫描**
+
+```python
+# contexts.py:51-75
+    requested_set = set(requested)
+    result: dict[str, Callable] = {}
+    
+    # Scan team-specific first (higher priority)
+    team_dir = Path(evo_root) / "teams" / team / "contexts"
+    global_dir = Path(evo_root) / "contexts"
+    
+    for scan_dir in (team_dir, global_dir):
+        if not scan_dir.is_dir():
+            continue
+        for py_file in sorted(scan_dir.glob("*.py")):
+            if py_file.name.startswith("_"):
+                continue
+            funcs = _load_context_functions(py_file)
+            for section_type, func in funcs.items():
+                if section_type in requested_set and section_type not in result:
+                    result[section_type] = func
+    
+    missing = requested_set - set(result.keys())
+    if missing:
+        logger.warning(f"Context providers not found: {missing}")
+    
+    return result
+```
+
+**Step 3: 调用方传入 team**
+
+在 `palimpsest/stages/context.py:44` 调用时传入 team：
+```python
+# context.py:44
+if evo_root:
+    registry = resolve_context_functions(evo_root, section_types, team=job_config.team)
+```
+
+**Step 4: 单元测试**
+
+```python
+# tests/test_context_loader.py
+def test_team_context_overrides_global(tmp_path):
+    # 创建 global context
+    (tmp_path / "contexts").mkdir()
+    (tmp_path / "contexts" / "test.py").write_text('''
+from palimpsest.runtime.contexts import context_provider
+@context_provider("foo")
+def foo(**_): return "global"
+''')
+    # 创建 team context
+    (tmp_path / "teams" / "factorio" / "contexts").mkdir(parents=True)
+    (tmp_path / "teams" / "factorio" / "contexts" / "test.py").write_text('''
+from palimpsest.runtime.contexts import context_provider
+@context_provider("foo")
+def foo(**_): return "team"
+''')
+    
+    result = resolve_context_functions(tmp_path, ["foo"], team="factorio")
+    assert result["foo"]() == "team"  # team 版本优先
+```
+
+**Verification:**
+```bash
+cd palimpsest && uv run pytest tests/test_context_loader.py::test_team_context_overrides_global -v
+```
+
+---
+
+## Task 4: 让 preparation_fn 支持 evo_root 注入
+
+**Files:**
+- Modify: `palimpsest/palimpsest/runner.py:138-141`
+
+**Step 1: 在 prep_params 注入 evo_root**
+
+```python
+# runner.py:138-141
+        prep_sig = inspect.signature(spec.preparation_fn)
+        if "runtime_context" in prep_sig.parameters:
+            prep_params["runtime_context"] = runtime_context
+        if "evo_root" in prep_sig.parameters:
+            prep_params["evo_root"] = str(evo_path)
+        workspace_cfg = spec.preparation_fn(**prep_params)
+```
+
+**Verification:**
+手工验证（Task 6 的 worker preparation_fn 会依赖这个注入）：
+```python
+def test_prep_fn(*, evo_root, **_):
+    print(f"evo_root={evo_root}")
+    return WorkspaceConfig(repo="", new_branch=False)
+```
+
+---
+
+## Task 5: 重组 factorio-agent 仓库为 evo 结构
+
+**Repo:** `/home/holo/factorio-agent`
+
+**Step 1: 创建顶层 evo 目录**
+
+```bash
+cd /home/holo/factorio-agent
+mkdir -p roles tools contexts
+touch roles/.gitkeep tools/.gitkeep contexts/.gitkeep
+```
+
+**Step 2: 移动 RCON/bridge 到 teams/factorio/lib/**
+
+```bash
+mkdir -p teams/factorio/lib
+git mv agent/rcon.py teams/factorio/lib/rcon.py
+git mv agent/bridge.py teams/factorio/lib/bridge.py
+```
+
+更新 `agent/run.py` 等文件的 import：
+```python
+# 旧：from agent.rcon import RCONClient
+# 新：from teams.factorio.lib.rcon import RCONClient
+```
+
+**Step 3: scripts/ 目录 symlink**
+
+```bash
+mkdir -p teams/factorio
+ln -s ../../mod/scripts teams/factorio/scripts
+```
+
+**Step 4: 创建空的 role/tool/context 目录**
+
+```bash
+mkdir -p teams/factorio/{roles,tools,contexts,prompts}
+touch teams/factorio/{roles,tools,contexts,prompts}/.gitkeep
+```
+
+**Step 5: commit**
+
+```bash
+git add teams/ roles/ tools/ contexts/ agent/
+git commit -m "restructure: adopt yoitsu evo layout (MVP workaround)
+
+- Add top-level roles/tools/contexts/ (empty, for evo compatibility)
+- Move agent/rcon.py → teams/factorio/lib/rcon.py
+- Move agent/bridge.py → teams/factorio/lib/bridge.py
+- Symlink teams/factorio/scripts → mod/scripts
+- Create teams/factorio/{roles,tools,contexts,prompts}/ structure
+
+This repo now serves as evo_root for yoitsu factorio team.
+Multi-bundle overlay deferred to Phase 2."
+```
+
+**Verification:**
+```bash
+test -L teams/factorio/scripts && echo "symlink ok"
+test -f teams/factorio/lib/rcon.py && echo "rcon moved"
+python -c "import sys; sys.path.insert(0, '.'); from teams.factorio.lib.rcon import RCONClient; print('import ok')"
+```
+
+---
+
+## Task 6: 实现 worker role + factorio_call_script tool + scripts context
+
+**Repo:** `/home/holo/factorio-agent`
+
+**Files:**
+- `teams/factorio/roles/worker.py`
+- `teams/factorio/tools/factorio_call_script.py`
+- `teams/factorio/contexts/factorio_scripts.py`
+- `teams/factorio/prompts/worker.md`
+
+**Step 1: factorio_call_script tool**
+
+```python
+# teams/factorio/tools/factorio_call_script.py
+"""Dispatcher tool for calling Factorio mod scripts via RCON."""
+from palimpsest.runtime.tools import tool, ToolResult
+from palimpsest.runtime.context import RuntimeContext
+
+
+@tool
+def factorio_call_script(
+    name: str,
+    args: str = "",
+    runtime_context: RuntimeContext = None,
+) -> ToolResult:
+    """Call a Factorio mod script via RCON.
+    
+    Args:
+        name: script name (e.g. 'actions.place', 'atomic.teleport')
+        args: argument string (typically JSON)
+    """
+    if runtime_context is None or "rcon" not in runtime_context.resources:
+        return ToolResult(success=False, output="No RCON connection")
+    
+    rcon = runtime_context.resources["rcon"]
+    command = f"/agent {name} {args}".strip()
+    raw = rcon.send_command(command)
+    
+    # RCON 单包 ~4KB 限制，截断时前缀标记
+    if len(raw.encode("utf-8")) >= 4000:
+        raw = "[TRUNCATED 4KB]\n" + raw[:3900]
+    
+    return ToolResult(success=True, output=raw)
+```
+
+**Step 2: factorio_scripts context provider**
+
+```python
+# teams/factorio/contexts/factorio_scripts.py
+"""Inject Factorio script catalog into system prompt."""
+from pathlib import Path
+import re
+from palimpsest.runtime.contexts import context_provider
+
+
+@context_provider("factorio_scripts")
+def factorio_scripts(*, evo_root, **_):
+    """Scan teams/factorio/scripts/ and return catalog as markdown list."""
+    scripts_dir = Path(evo_root) / "teams" / "factorio" / "scripts"
+    if not scripts_dir.exists():
+        return "No scripts found."
+    
+    catalog = []
+    for lua_path in sorted(scripts_dir.rglob("*.lua")):
+        rel = lua_path.relative_to(scripts_dir).with_suffix("")
+        name = str(rel).replace("/", ".")
+        # 提取首行注释作为描述
+        lines = lua_path.read_text(encoding="utf-8").splitlines()
+        desc = ""
+        if lines and (m := re.match(r"--\s*(.+)", lines[0])):
+            desc = m.group(1).strip()
+        catalog.append(f"- `{name}` — {desc}" if desc else f"- `{name}`")
+    
+    return "\n".join(catalog) if catalog else "No scripts available."
+```
+
+**Step 3: worker role**
+
+```python
+# teams/factorio/roles/worker.py
+"""Factorio worker role: connects RCON, loads scripts, executes in-game tasks."""
+from palimpsest.runtime.roles import role, JobSpec, context_spec
+from palimpsest.config import WorkspaceConfig
+from teams.factorio.lib.rcon import RCONClient
+import os
+
+
+def factorio_worker_preparation(*, runtime_context, evo_root, **params):
+    """Connect RCON and batch-load all evo scripts into mod dynamic_scripts."""
+    from pathlib import Path
+    
+    # Connect RCON
+    rcon = RCONClient(
+        host=os.environ.get("FACTORIO_RCON_HOST", "localhost"),
+        port=int(os.environ.get("FACTORIO_RCON_PORT", "27015")),
+        password=os.environ.get("FACTORIO_RCON_PASSWORD", "changeme"),
+    )
+    rcon.connect()
+    runtime_context.resources["rcon"] = rcon
+    runtime_context.register_cleanup(rcon.close)
+    
+    # Batch-load scripts: 遍历 evo/teams/factorio/scripts/*.lua，通过 RCON register
+    scripts_dir = Path(evo_root) / "teams" / "factorio" / "scripts"
+    if scripts_dir.exists():
+        for lua_path in scripts_dir.rglob("*.lua"):
+            rel = lua_path.relative_to(scripts_dir).with_suffix("")
+            name = str(rel).replace("/", ".")
+            code = lua_path.read_text(encoding="utf-8")
+            # 注意：code 里如果有 >>> 会破坏协议，MVP 假设不含
+            rcon.send_command(f"/agent register {name} <<<{code}>>>")
+    
+    # Worker 不需要 git workspace
+    return WorkspaceConfig(repo="", new_branch=False)
+
+
+def factorio_worker_publication(*, **_):
+    """Worker 不产出 git commit，后续可加 ArtifactStore checkpoint。"""
+    return None
+
+
+factorio_worker_publication.__publication_strategy__ = "skip"
+
+
+@role(
+    name="worker",
+    description="Factorio in-game worker with RCON",
+    role_type="worker",
+    max_cost=1.0,
+)
+def worker(**params):
+    return JobSpec(
+        preparation_fn=factorio_worker_preparation,
+        context_fn=context_spec(
+            system="teams/factorio/prompts/worker.md",
+            sections=[{"type": "factorio_scripts"}],
+        ),
+        publication_fn=factorio_worker_publication,
+        tools=["factorio_call_script"],
+    )
+```
+
+**Step 4: prompts/worker.md**
+
+```markdown
+# Factorio Worker
+
+你是一个在 Factorio 游戏中执行任务的 agent。你只能通过 `factorio_call_script` 工具调用已注册的脚本。
+
+## 可用脚本
+
+{factorio_scripts}
+
+## 工作流程
+
+1. 理解目标（goal）
+2. 选择合适的脚本调用
+3. 根据返回结果决定下一步
+4. 完成目标后停止
+
+## 注意事项
+
+- 如果发现需要反复调用同一个脚本，照样完成任务。事后会有 optimizer 评估是否值得抽象。
+- 如果脚本返回 `[TRUNCATED 4KB]`，说明输出过大，考虑分页或写文件。
+```
+
+**Verification:**
+```bash
+cd /home/holo/factorio-agent
+python -c "from teams.factorio.roles.worker import worker; print(worker())"
+```
+
+---
+
+## Task 7: 实现 implementer role + api_search tool
+
+**Repo:** `/home/holo/factorio-agent`
+
+**Files:**
+- `teams/factorio/roles/implementer.py`
+- `teams/factorio/tools/api_search.py`
+- `teams/factorio/tools/api_detail.py`
+- `teams/factorio/prompts/implementer.md`
+
+**Step 1: api_search / api_detail tools**
+
+```python
+# teams/factorio/tools/api_search.py
+from palimpsest.runtime.tools import tool, ToolResult
+from agent.api_docs import ApiIndex
+
+_INDEX = None
+def _get_index():
+    global _INDEX
+    if _INDEX is None:
+        _INDEX = ApiIndex()
+        _INDEX.load()
+    return _INDEX
+
+@tool
+def api_search(query: str) -> ToolResult:
+    """Search Factorio Lua API for classes/methods matching query."""
+    results = _get_index().search(query, limit=30)
+    lines = [f"{r['name']} ({r['kind']}) — {r['summary']}" for r in results]
+    return ToolResult(success=True, output="\n".join(lines) if lines else "No results")
+
+@tool
+def api_detail(name: str) -> ToolResult:
+    """Get full details for a specific API entry."""
+    detail = _get_index().detail(name)
+    if not detail:
+        return ToolResult(success=False, output=f"Not found: {name}")
+    
+    lines = [
+        f"Name: {detail['name']}",
+        f"Kind: {detail['kind']}",
+        f"Description: {detail['description']}",
+    ]
+    if "type_info" in detail:
+        lines.append(f"Type: {detail['type_info']}")
+    return ToolResult(success=True, output="\n".join(lines))
+```
+
+**Step 2: implementer role**
+
+```python
+# teams/factorio/roles/implementer.py
+"""Implementer role: writes Lua scripts in factorio-agent repo."""
+from palimpsest.runtime.roles import role, JobSpec, context_spec, workspace_config, git_publication
+
+
+def implementer_publication(*, workspace_path, **kwargs):
+    """Path allowlist: only allow writes to teams/factorio/scripts/."""
+    import subprocess
+    
+    result = subprocess.run(
+        ["git", "-C", workspace_path, "diff", "--cached", "--name-only"],
+        capture_output=True, text=True, check=True,
+    )
+    changed = [p.strip() for p in result.stdout.splitlines() if p.strip()]
+    forbidden = [
+        p for p in changed
+        if not p.startswith("teams/factorio/scripts/") and not p.startswith("mod/scripts/")
+    ]
+    if forbidden:
+        raise ValueError(f"Implementer wrote outside allowlist: {forbidden}")
+    
+    # 调用 git_publication factory 返回的 callable
+    pub_fn = git_publication(strategy="branch")
+    return pub_fn(workspace_path=workspace_path, **kwargs)
+
+
+@role(
+    name="implementer",
+    description="Factorio Lua script implementer",
+    role_type="worker",
+    max_cost=2.0,
+)
+def implementer(**params):
+    return JobSpec(
+        preparation_fn=workspace_config(
+            repo=os.environ.get("FACTORIO_AGENT_REPO", "https://github.com/org/factorio-agent"),
+            init_branch="master",
+            new_branch=True,
+        ),
+        context_fn=context_spec(
+            system="teams/factorio/prompts/implementer.md",
+            sections=[{"type": "factorio_scripts"}],
+        ),
+        publication_fn=implementer_publication,
+        tools=["bash", "read_file", "write_file", "api_search", "api_detail"],
+    )
+```
+
+**Step 3: prompts/implementer.md**
+
+```markdown
+# Factorio Implementer
+
+你的任务是在 factorio-agent 仓库中编写或修改 Lua 脚本。
+
+## 当前脚本目录
+
+{factorio_scripts}
+
+## 工作流程
+
+1. 理解目标（goal）—— 通常是"在 teams/factorio/scripts/actions/ 下新增一个封装脚本"
+2. 用 `api_search` / `api_detail` 查阅 Factorio Lua API
+3. 用 `read_file` 读取现有脚本作为参考
+4. 用 `write_file` 写新脚本到 `teams/factorio/scripts/actions/<name>.lua`
+5. 用 `bash` 执行 `git add` 和 `git commit`
+
+## 路径限制
+
+**只允许写 `teams/factorio/scripts/` 下的文件**。写其他路径会被 publication 阶段拒绝。
+
+## Lua 脚本格式
+
+```lua
+-- 首行注释：简短描述
+return function(args_str)
+    -- args_str 是 JSON 字符串，用 game.json_to_table() 解析
+    local args = game.json_to_table(args_str)
+    
+    -- 你的逻辑
+    
+    -- 返回结果（serialize 已自动注入）
+    return serialize({ok = true, result = ...})
+end
+```
+```
+
+**Verification:**
+```bash
+cd /home/holo/factorio-agent
+python -c "from teams.factorio.roles.implementer import implementer; print(implementer())"
+```
+
+---
+
+## Task 8: optimizer prompt 增加 factorio 演化知识
+
+**Files:**
+- `teams/factorio/prompts/optimizer-addendum.md` (新建)
+- 全局 optimizer role prompt 需要 include 这个 addendum（位置待确认）
+
+**Step 1: addendum 内容**
+
+```markdown
+# Factorio Tool Evolution Guidance
+
+当你分析 `observation.tool_repetition` 事件时，如果：
+- `team == "factorio"`
+- `tool_name` 包含 `factorio_call_script(actions.*)`
+- `call_count >= 5`
+
+这表示 worker 反复调用了同一个 action 脚本，存在抽象成更高层脚本的机会。
+
+## 应输出的 ReviewProposal
+
+```json
+{
+  "problem_classification": {
+    "category": "tool_reliability",
+    "severity": "medium",
+    "summary": "Worker repeatedly called actions.place (10 times), pattern: grid_5x2"
+  },
+  "executable_proposal": {
+    "action_type": "improve_tool",
+    "description": "Create actions/place_grid.lua to encapsulate grid placement pattern",
+    "estimated_impact": "Reduce tool calls from 10 to 1 for grid placement tasks"
+  },
+  "task_template": {
+    "goal": "在 teams/factorio/scripts/actions/ 下创建 place_grid.lua，封装网格放置模式（参考 arg_pattern: grid_5x2）",
+    "role": "implementer",
+    "team": "default",
+    "budget": 1.5
+  }
+}
+```
+
+## 关键点
+
+- `task_template.role` 必须是 `"implementer"`（不是 worker）
+- `task_template.team` 是 `"default"`（implementer 不占用 factorio 串行锁）
+- `goal` 要明确指定文件路径和参考的 arg_pattern
+```
+
+**Step 2: 全局 optimizer prompt include**
+
+（这一步需要先找到全局 optimizer role 的 prompt 文件位置，MVP 阶段可以手工把 addendum 内容直接追加到 optimizer prompt 末尾）
+
+**Verification:**
+手工验证（Task 9 端到端 smoke 时观察 optimizer 输出）
+
+---
+
+## Task 9: 端到端 smoke
+
+**Pre-requisites:**
+- factorio headless server 已启动（host 上，RCON 端口 27015）
+- yoitsu trenni / pasloe / palimpsest 容器已 build
+- factorio-agent 仓库已 clone 到 host，路径配置到 trenni 的 `PALIMPSEST_EVO_DIR`
+- trenni config 中 factorio team 配置：
+  ```yaml
+  teams:
+    factorio:
+      runtime:
+        env_allowlist: [FACTORIO_RCON_HOST, FACTORIO_RCON_PORT, FACTORIO_RCON_PASSWORD, PALIMPSEST_EVO_DIR]
+      scheduling:
+        max_concurrent_jobs: 1
+  ```
+
+**Step 1: 启动 yoitsu 栈**
+
+```bash
+cd /home/holo/yoitsu
+# 假设有 deploy/quadlet 启动脚本，或手工 podman run
+systemctl --user start yoitsu-pasloe yoitsu-trenni
+```
+
+**Step 2: 提交第一次 driving task**
+
+```bash
+cat > /tmp/factorio-grid-task.yaml <<EOF
+tasks:
+  - team: factorio
+    role: worker
+    budget: 1.0
+    goal: |
+      在 (0,0) 到 (4,1) 范围内放置 10 个 iron-chest，组成 5x2 网格。
+      使用现有脚本完成。
+EOF
+
+yoitsu submit /tmp/factorio-grid-task.yaml
+```
+
+**Step 3: 观察事件流**
+
+等待 5-10 分钟，观察：
+- worker job 完成
+- pasloe 收到至少 1 个 `observation.tool_repetition` 事件（tool_name 包含 `actions.place`）
+- trenni 聚合器触发，spawn optimizer job
+- optimizer job 输出 ReviewProposal JSON
+- supervisor 解析成功，spawn implementer task
+- implementer job 创建分支，写 `teams/factorio/scripts/actions/place_grid.lua`，commit
+
+**Step 4: merge implementer 分支**
+
+```bash
+cd /home/holo/factorio-agent
+git fetch
+git checkout master
+git merge --ff-only <implementer-branch>
+```
+
+**Step 5: 提交第二次 driving task**
+
+```bash
+yoitsu submit /tmp/factorio-grid-task.yaml
+```
+
+断言：
+- worker job 完成
+- 该 job 的 `factorio_call_script` 调用次数显著低于第一次（理想：1 次 `actions.place_grid`）
+- 不再产生 `observation.tool_repetition` 事件（或 call_count < 5）
+
+**Step 6: 记录证据**
+
+```bash
+# 查询两次 job 的 tool call 历史
+pasloe-cli query --job-id <job1> --event-type tool.exec
+pasloe-cli query --job-id <job2> --event-type tool.exec
+
+# 保存到文档
+cat > docs/plans/2026-04-06-factorio-tool-evolution-mvp-results.md <<EOF
+# Factorio Tool Evolution MVP Results
+
+## First Run
+- Job ID: <job1>
+- Tool calls: 10x factorio_call_script(actions.place)
+- observation.tool_repetition emitted: yes
+
+## Optimizer Output
+- ReviewProposal: <paste JSON>
+- Implementer branch: <branch-name>
+- New script: teams/factorio/scripts/actions/place_grid.lua
+
+## Second Run
+- Job ID: <job2>
+- Tool calls: 1x factorio_call_script(actions.place_grid)
+- observation.tool_repetition emitted: no
+
+## Conclusion
+演化成功：yoitsu 自主产出了一个新 Lua 脚本，第二次执行同一任务时工具调用次数从 10 降到 1。
+EOF
+```
+
+**完成标志：**
+- yoitsu 在无人工编写 Lua 的情况下，从 observation 信号出发，自主产出了一个 commit 到 evo 仓库的新脚本
+- 第二次执行同一任务时该脚本被自动使用，工具调用次数显著下降
+- 整条链路的非 evo 改动只有：yoitsu-contracts 加 2 个事件模型 / palimpsest 加 tool_pattern 检测 / contexts loader 支持 team / runner 注入 evo_root / trenni 加聚合器
+
+---
+
+## 风险与未决问题
+
+1. **RCON register 协议的 `>>>` 转义**：如果 Lua 代码里有 `>>>` 字符串会破坏协议。MVP 假设不含；生产环境需要 base64 或换协议。
+2. **observation 聚合器的阈值调优**：`tool_repetition: 5.0` 是拍脑袋的值，可能需要根据实际任务调整。
+3. **implementer 写出的 Lua 语法错**：LLM 可能写出不能跑的脚本。MVP 不做静态检查，第二次 smoke 失败时进入第二轮迭代。
+4. **factorio 服务器的网络可达性**：palimpsest job 容器需要能访问 host 上的 RCON 端口（27015）。如果容器网络隔离，需要配置 `--network=host` 或端口映射。
+5. **evo_root 在容器内的 mount**：trenni 启动 palimpsest job 容器时需要把 host 上的 factorio-agent clone 挂进容器。这需要在 trenni 的 podman backend 配置 volume mount（当前 plan 未涉及，需要手工或加 config）。
