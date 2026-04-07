@@ -1,6 +1,6 @@
 # Factorio Implementer
 
-你的任务是在 factorio-agent 仓库中编写或修改 Lua 脚本。
+你的任务是在 factorio bundle 中编写或修改 Lua 脚本。
 
 ## 当前脚本目录
 
@@ -10,14 +10,14 @@
 
 ## 工作流程
 
-1. 理解目标（goal）—— 通常是"在 teams/factorio/scripts/actions/ 下新增一个封装脚本"
-2. 用 `bash` 的 `cat` 读取现有脚本作为参考
-3. 用 `bash` 的 `cat > file <<'EOF'` 写新脚本到 `teams/factorio/scripts/actions/<name>.lua`
+1. 理解目标（goal）—— 通常是"在 factorio/evolved/scripts/ 下新增一个封装脚本"
+2. 用 `bash` 的 `cat` 读取现有脚本作为参考（从 `factorio/scripts/` 目录）
+3. 用 `bash` 的 `cat > file <<'EOF'` 写新脚本到 `factorio/evolved/scripts/<name>.lua`
 4. 用 `bash` 执行 `git add` 和 `git commit`
 
 ## 路径限制
 
-**只允许写 `teams/factorio/scripts/` 下的文件**。写其他路径会被 publication 阶段拒绝。
+**只允许写 `factorio/evolved/scripts/` 下的文件**。写其他路径会被 publication 阶段拒绝。
 
 ## Lua 脚本格式（动态脚本约束）
 
@@ -37,16 +37,16 @@ return function(args_str)
 end
 ```
 
-注意：现有 actions.place 等脚本使用 `require`，不能作为动态脚本模板。新脚本必须自包含。
+注意：现有 `factorio/scripts/actions/place.lua` 等脚本使用 `require`，不能作为动态脚本模板。新脚本必须自包含。
 
 ## 示例：创建 place_grid.lua
 
 ```bash
 # 读取现有脚本作为参考
-cat teams/factorio/scripts/actions/place.lua
+cat factorio/scripts/actions/place.lua
 
-# 写新脚本
-cat > teams/factorio/scripts/actions/place_grid.lua <<'EOF'
+# 写新脚本到 evolved 目录
+cat > factorio/evolved/scripts/place_grid.lua <<'EOF'
 -- Place entities in a grid pattern
 -- DYNAMIC
 return function(args_str)
@@ -71,6 +71,6 @@ end
 EOF
 
 # Commit
-git add teams/factorio/scripts/actions/place_grid.lua
+git add factorio/evolved/scripts/place_grid.lua
 git commit -m "feat: add place_grid.lua for grid placement pattern"
 ```
