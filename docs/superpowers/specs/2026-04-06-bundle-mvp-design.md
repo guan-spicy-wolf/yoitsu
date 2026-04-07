@@ -252,8 +252,10 @@ API. Trenni treats them identically to externally submitted tasks.
   remain as attributes of role files.
 - SHA pinning, evo materialization (`_materialize_evo_root`), and sys.path
   injection mechanisms.
-- `evolved/` conventions and implementer allowlist semantics (just rooted at
-  `evo/<bundle>/evolved/` instead of `evo/teams/<team>/evolved/`).
+- `evolved/` as the agent write surface remains the pattern; the root path
+  changes from `evo/teams/<team>/evolved/` to `evo/<bundle>/evolved/`, and
+  the implementer allowlist is tightened from `teams/factorio/scripts/ +
+  mod/scripts/` to `evo/<bundle>/evolved/**` only.
 - `factorio-tool-evolution-mvp.md` main line (Task 9 smoke verified) — bundle
   MVP is its infrastructure upgrade, not a replacement.
 
@@ -308,8 +310,10 @@ Detailed plan will be produced by `writing-plans` skill. Outline only:
 6. **Supervisor simplification** — delete `supervisor.py:1480-1511` role
    categorization, delete `_DEFAULT_TEAM_DEFINITION`, remove all references
    to `worker_roles` / `planner_role` / `eval_role`.
-7. **API change** — task submission requires `role` field. Missing → 400.
-   Update CLI, API handlers, and any submission helpers.
+7. **Submission envelope replacement** — replace current `{team, repo, init_branch, ...}`
+   submission shape with `{bundle, role, goal, params}`. `bundle` and `role` are
+   required; missing either is a hard 400. Update CLI, API handlers, and any
+   submission helpers.
 8. **Smoke verification** —
    (a) `(bundle=factorio, role=worker)` runs the ping script via RCON (Task 9 equivalent).
    (b) `(bundle=factorio, role=implementer)` writes a Lua script and commits it
@@ -318,7 +322,7 @@ Detailed plan will be produced by `writing-plans` skill. Outline only:
 
 ## Success criteria
 
-- Submitting `{bundle: factorio, role: worker, payload: ...}` runs worker
+- Submitting `{bundle: factorio, role: worker, goal: "...", params: {}}` runs worker
   directly without decomposition or misrouting.
 - Submitting a task without `role` returns 400 immediately.
 - `supervisor.py` contains zero references to `planner_role`, `worker_roles`,
