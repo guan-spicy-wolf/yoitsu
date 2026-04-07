@@ -38,18 +38,20 @@ The implementation plan for Bundle MVP has been archived to:
 
 ## Remaining Work
 
-1. **Migrate `github_context` into bundle contexts**
+1. ~~**Migrate `github_context` into bundle contexts**~~ ✅ DONE
    Move the remaining global/provider assumptions to `evo/<bundle>/contexts/`
    so the skipped tests can be re-enabled.
 
-   *Status: Optional cleanup - 3 tests skipped in test_e2e_external_events.py*
+   *Result: Created evo/factorio/contexts/github_context.py. Updated tests to use
+   resolve_context_functions. All 177 tests passing.*
 
-2. **Re-adapt autonomous review loop**
+2. ~~**Re-adapt autonomous review loop**~~ ✅ DONE
    Update `docs/plans/2026-04-04-autonomous-review-loop-output-closure.md`
    and its implementation path to the new `(bundle, role, goal, params)`
    submission contract.
 
-   *Status: Pending*
+   *Result: Updated observation events to include bundle field. _handle_optimizer_output
+   now inherits bundle from parent job. Tests updated to use bundle instead of team.*
 
 3. ~~**Run real Factorio verification**~~ ✅ DONE
    Re-run the iron-chest task and confirm whether the historical

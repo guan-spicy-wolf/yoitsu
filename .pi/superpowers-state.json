@@ -27,13 +27,9 @@
     }
   },
   "tdd": {
-    "phase": "green",
-    "testFiles": [
-      "/home/holo/yoitsu/palimpsest/tests/test_e2e_external_events.py"
-    ],
-    "sourceFiles": [
-      "/home/holo/yoitsu/evo/factorio/contexts/github_context.py"
-    ],
+    "phase": "idle",
+    "testFiles": [],
+    "sourceFiles": [],
     "redVerificationPending": false
   },
   "debug": {
