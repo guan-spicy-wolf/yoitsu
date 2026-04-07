@@ -34,7 +34,7 @@ def factorio_worker_preparation(
     Returns:
         WorkspaceConfig with empty repo (no git workspace needed)
     """
-    from teams.factorio.lib.rcon import RCONClient
+    from factorio.lib.rcon import RCONClient
     
     # Connect RCON
     rcon = RCONClient(
@@ -82,7 +82,7 @@ def worker(**params) -> JobSpec:
     return JobSpec(
         preparation_fn=factorio_worker_preparation,
         context_fn=context_spec(
-            system="teams/factorio/prompts/worker.md",
+            system="factorio/prompts/worker.md",
             sections=[{"type": "factorio_scripts"}],
         ),
         publication_fn=factorio_worker_publication,

@@ -1,6 +1,6 @@
 """Inject Factorio script catalog into task context.
 
-Per Factorio Tool Evolution MVP: Scans teams/factorio/scripts/ directory
+Per Bundle MVP: Scans factorio/scripts/ directory
 and generates a markdown list of available scripts for the worker prompt.
 """
 from __future__ import annotations
@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 def factorio_scripts(*, evo_root: str, **_) -> str:
-    """Scan teams/factorio/scripts/ and return catalog as markdown list.
+    """Scan factorio/scripts/ and return catalog as markdown list.
     
     This context provider is injected into the worker's task message,
     providing a dynamic list of available scripts based on the current
@@ -22,7 +22,7 @@ def factorio_scripts(*, evo_root: str, **_) -> str:
     Returns:
         Markdown-formatted list of available scripts with descriptions.
     """
-    scripts_dir = Path(evo_root) / "teams" / "factorio" / "scripts"
+    scripts_dir = Path(evo_root) / "factorio" / "scripts"
     if not scripts_dir.exists():
         return "No scripts found."
 

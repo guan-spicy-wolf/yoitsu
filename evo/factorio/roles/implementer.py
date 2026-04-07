@@ -1,8 +1,7 @@
-"""Implementer role: writes Lua scripts in factorio-agent repo.
+"""Implementer role: writes Lua scripts in evolved/ directory.
 
-Per Factorio Tool Evolution MVP: The implementer role is spawned by the
-optimizer when a tool_repetition pattern is detected. It writes new Lua
-scripts to teams/factorio/scripts/ with path allowlist enforcement.
+Per Bundle MVP: The implementer role writes Lua scripts to
+factorio/evolved/scripts/ with path allowlist enforcement.
 """
 from __future__ import annotations
 
@@ -19,7 +18,7 @@ def implementer_publication(
     workspace_path: str,
     **kwargs,
 ) -> tuple[str | None, list]:
-    """Path allowlist: only allow writes to teams/factorio/scripts/ and mod/scripts/.
+    """Path allowlist: only allow writes to factorio/evolved/scripts/.
     
     Checks ALL changes (staged + unstaged + untracked) before git_publication's
     `git add -A` runs. This prevents bypassing the allowlist by leaving files
@@ -59,11 +58,11 @@ def implementer_publication(
     # Check path allowlist
     forbidden = [
         p for p in changed
-        if not p.startswith("teams/factorio/scripts/") and not p.startswith("mod/scripts/")
+        if not p.startswith("factorio/evolved/scripts/")
     ]
     
     if forbidden:
-        raise ValueError(f"Implementer wrote outside allowlist: {forbidden}")
+        raise ValueError(f"Implementer wrote outside evolved/ allowlist: {forbidden}")
     
     # Call git_publication with branch strategy
     pub_fn = git_publication(strategy="branch")
@@ -82,7 +81,7 @@ def implementer(**params) -> JobSpec:
     """Factorio Lua script implementer role definition.
     
     Per Factorio Tool Evolution MVP:
-    - Writes Lua scripts to teams/factorio/scripts/
+    - Writes Lua scripts to factorio/evolved/scripts/
     - Uses bash tool for file operations
     - Path allowlist enforced in publication (checks all changes before git add -A)
     - Publication creates a new branch for review
@@ -97,7 +96,7 @@ def implementer(**params) -> JobSpec:
             new_branch=True,
         ),
         context_fn=context_spec(
-            system="teams/factorio/prompts/implementer.md",
+            system="factorio/prompts/implementer.md",
             sections=[{"type": "factorio_scripts"}],
         ),
         publication_fn=implementer_publication,
