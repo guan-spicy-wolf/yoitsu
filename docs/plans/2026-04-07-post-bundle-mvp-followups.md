@@ -59,17 +59,17 @@ The implementation plan for Bundle MVP has been archived to:
 
    *Result: Iron-chest placed successfully at (0,0). Full tool chain verified.*
 
-4. **Decide whether role topology needs further changes**
+4. ~~**Decide whether role topology needs further changes**~~ ✅ DONE
    Only revisit planner/worker/implementer topology if the real task run
    still exposes routing or execution problems.
 
-   *Status: Not needed - iron-chest task worked correctly*
+   *Result: Not needed - iron-chest task worked correctly*
 
 5. **Choose publication path for local commits**
    Decide how to publish the accumulated local work across `yoitsu`,
    `palimpsest`, and `yoitsu-contracts`.
 
-   *Status: Pending user decision - multiple repos have uncommitted changes*
+   *Status: Pending user decision - 28+5+7+10 = 50 commits ready to push*
 
 ## Test Results
 
