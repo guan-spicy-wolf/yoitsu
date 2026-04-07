@@ -1,7 +1,7 @@
 # Factorio Tool Evolution Guidance
 
 当你分析 `observation.tool_repetition` 事件时，如果：
-- `team == "factorio"`
+- `bundle == "factorio"`
 - `tool_name` 包含 `factorio_call_script(actions.*)`
 - `call_count >= 5`
 
@@ -22,9 +22,9 @@
     "estimated_impact": "Reduce tool calls from 10 to 1 for grid placement tasks"
   },
   "task_template": {
-    "goal": "在 teams/factorio/scripts/actions/ 下创建 place_grid.lua，封装网格放置模式（参考 arg_pattern: grid_5x2）",
+    "goal": "在 factorio/evolved/scripts/ 下创建 place_grid.lua，封装网格放置模式（参考 arg_pattern: grid_5x2）",
     "role": "implementer",
-    "team": "default",
+    "bundle": "factorio",
     "budget": 1.5
   }
 }
@@ -33,7 +33,7 @@
 ## 关键点
 
 - `task_template.role` 必须是 `"implementer"`（不是 worker）
-- `task_template.team` 是 `"default"`（implementer 不占用 factorio 串行锁）
+- `task_template.bundle` 是 `"factorio"`
 - `goal` 要明确指定文件路径和参考的 arg_pattern
 
 ## 分析流程
