@@ -1,77 +1,40 @@
-"""Implementer role: writes Lua scripts in evolved/ directory.
+"""Implementer role: writes Lua scripts directly into live bundle.
 
-Per Bundle MVP: The implementer role writes Lua scripts to
-factorio/evolved/scripts/ with path allowlist enforcement.
+Per Factorio Optimization Loop Closure MVP:
+- Uses workspace_override to write directly into evo_root
+- No git repo, no publication
+- Path safety enforced by bundle container isolation + max_concurrent_jobs=1
 """
 from __future__ import annotations
 
-import os
-import subprocess
-from typing import Any
+from palimpsest.runtime.roles import JobSpec, context_spec, role
 
-from palimpsest.config import WorkspaceConfig
-from palimpsest.runtime.roles import JobSpec, context_spec, role, workspace_config, git_publication
+# Import from relative path within bundle
+# Note: When this role is loaded, evo/factorio is already on sys.path
+try:
+    from lib.preparation import prepare_evo_workspace_override
+except ImportError:
+    # Fallback for testing when not in bundle context
+    from factorio.lib.preparation import prepare_evo_workspace_override
 
 
-def implementer_publication(
-    *,
-    workspace_path: str,
-    **kwargs,
-) -> tuple[str | None, list]:
-    """Path allowlist: only allow writes to factorio/evolved/scripts/.
+def implementer_publication(**kwargs) -> tuple[None, list]:
+    """Implementer doesn't produce git commits.
+
+    Output is written directly into the live bundle.
     
-    Checks ALL changes (staged + unstaged + untracked) before git_publication's
-    `git add -A` runs. This prevents bypassing the allowlist by leaving files
-    unstaged.
-    
-    Raises:
-        ValueError: If changes are detected outside the allowed paths.
+    Returns:
+        (None, []) - no git ref, no artifact bindings
     """
-    # Check ALL changes (staged, unstaged, untracked) using git status --porcelain
-    # This catches files that git_publication would later add via `git add -A`
-    result = subprocess.run(
-        ["git", "-C", workspace_path, "status", "--porcelain"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    
-    # Parse porcelain output: "XY PATH" or "XY OLD -> NEW" for renames
-    # Note: XY are exactly 2 chars at positions 0-1, space at position 2
-    changed = []
-    for line in result.stdout.splitlines():
-        if not line:
-            continue
-        # Check for rename (contains " -> ")
-        if " -> " in line:
-            # Rename: extract the NEW_PATH (destination)
-            # Format: "XY OLD_PATH -> NEW_PATH"
-            parts = line.split(" -> ")
-            path = parts[-1].strip()
-        else:
-            # Normal change: path starts at position 3 (after XY + space)
-            # XY are exactly 2 chars (e.g., " M", "M ", "??", "MM")
-            path = line[3:].strip()
-        if path:
-            changed.append(path)
-    
-    # Check path allowlist
-    forbidden = [
-        p for p in changed
-        if not p.startswith("factorio/evolved/scripts/")
-    ]
-    
-    if forbidden:
-        raise ValueError(f"Implementer wrote outside evolved/ allowlist: {forbidden}")
-    
-    # Call git_publication with branch strategy
-    pub_fn = git_publication(strategy="branch")
-    return pub_fn(workspace_path=workspace_path, **kwargs)
+    return None, []
+
+
+implementer_publication.__publication_strategy__ = "skip"
 
 
 @role(
     name="implementer",
-    description="Factorio Lua script implementer",
+    description="Factorio bundle implementer (writes lua directly into the live bundle)",
     role_type="worker",
     min_cost=0.1,
     recommended_cost=0.5,
@@ -80,21 +43,14 @@ def implementer_publication(
 def implementer(**params) -> JobSpec:
     """Factorio Lua script implementer role definition.
     
-    Per Factorio Tool Evolution MVP:
-    - Writes Lua scripts to factorio/evolved/scripts/
-    - Uses bash tool for file operations
-    - Path allowlist enforced in publication (checks all changes before git add -A)
-    - Publication creates a new branch for review
+    Per Factorio Optimization Loop Closure MVP:
+    - Uses workspace_override to write directly into evo_root
+    - Bash tool's cwd naturally lands in the bundle directory
+    - No git publication (writes are immediate and live)
+    - Serialization enforced by bundle scheduling (max_concurrent_jobs=1)
     """
     return JobSpec(
-        preparation_fn=workspace_config(
-            repo=os.environ.get(
-                "FACTORIO_AGENT_REPO",
-                "https://github.com/org/factorio-agent"
-            ),
-            init_branch="master",
-            new_branch=True,
-        ),
+        preparation_fn=prepare_evo_workspace_override,
         context_fn=context_spec(
             system="factorio/prompts/implementer.md",
             sections=[{"type": "factorio_scripts"}],

@@ -1,6 +1,16 @@
 # Factorio Implementer
 
-你的任务是在 factorio bundle 中编写或修改 Lua 脚本。
+你的任务是在 factorio bundle 中编写 Lua 脚本，直接写入到 live bundle。
+
+## 工作目录约定
+
+**你的当前工作目录（cwd）就是 evo_root**。bundle 内所有文件都在 `factorio/` 子目录下。
+
+新脚本写到 `factorio/scripts/<your_script>.lua`（相对 cwd 的路径，等价于 `<evo_root>/factorio/scripts/<your_script>.lua`）。
+
+**不要**写到 `factorio/` 之外的任何目录。
+
+**不要**修改已有的 `factorio/scripts/actions/`、`factorio/scripts/atomic/`、`factorio/scripts/lib/`、`factorio/scripts/examples/` 下的文件，只创建新文件。
 
 ## 当前脚本目录
 
@@ -10,14 +20,16 @@
 
 ## 工作流程
 
-1. 理解目标（goal）—— 通常是"在 factorio/evolved/scripts/ 下新增一个封装脚本"
+1. 理解目标（goal）—— 通常是"在 factorio/scripts/ 下新增一个封装脚本"
 2. 用 `bash` 的 `cat` 读取现有脚本作为参考（从 `factorio/scripts/` 目录）
-3. 用 `bash` 的 `cat > file <<'EOF'` 写新脚本到 `factorio/evolved/scripts/<name>.lua`
-4. 用 `bash` 执行 `git add` 和 `git commit`
+3. 用 `bash` 的 `cat > file <<'EOF'` 写新脚本到 `factorio/scripts/<name>.lua`
+4. **不需要 git commit** —— 文件直接写入到 live bundle，立即生效
 
 ## 路径限制
 
-**只允许写 `factorio/evolved/scripts/` 下的文件**。写其他路径会被 publication 阶段拒绝。
+**只允许写 `factorio/scripts/` 下的新文件**。
+**不要修改任何现有文件**。
+写其他路径会被容器隔离阻止。
 
 ## Lua 脚本格式（动态脚本约束）
 
@@ -37,40 +49,52 @@ return function(args_str)
 end
 ```
 
-注意：现有 `factorio/scripts/actions/place.lua` 等脚本使用 `require`，不能作为动态脚本模板。新脚本必须自包含。
+注意：现有 `factorio/scripts/actions/` 等脚本使用 `require`，不能作为动态脚本模板。新脚本必须自包含。
 
-## 示例：创建 place_grid.lua
+## 示例：创建 scan_resources.lua
 
 ```bash
 # 读取现有脚本作为参考
-cat factorio/scripts/actions/place.lua
+cat factorio/scripts/actions/find_ore.lua
 
-# 写新脚本到 evolved 目录
-cat > factorio/evolved/scripts/place_grid.lua <<'EOF'
--- Place entities in a grid pattern
+# 写新脚本到 scripts 目录（直接生效）
+cat > factorio/scripts/scan_resources.lua <<'EOF'
+-- Scan resources in a radius around player
 -- DYNAMIC
 return function(args_str)
     local args = game.json_to_table(args_str)
-    local x_start = args.x_start or 0
-    local y_start = args.y_start or 0
-    local width = args.width or 5
-    local height = args.height or 2
-    local entity = args.entity or "iron-chest"
+    local radius = args.radius or 50
     
-    local results = {}
-    for y = 0, height - 1 do
-        for x = 0, width - 1 do
-            local pos = {x = x_start + x, y = y_start + y}
-            -- Place entity logic here
-            table.insert(results, pos)
-        end
+    local player = game.players[1]
+    local surface = player.surface
+    local pos = player.position
+    
+    local resources = surface.find_entities_filtered{
+        area = {
+            left_top = {x = pos.x - radius, y = pos.y - radius},
+            right_bottom = {x = pos.x + radius, y = pos.y + radius}
+        },
+        type = "resource"
+    }
+    
+    local result = {}
+    for _, res in ipairs(resources) do
+        table.insert(result, {
+            name = res.name,
+            position = res.position,
+            amount = res.amount
+        })
     end
     
-    return serialize({ok = true, placed = #results, positions = results})
+    return serialize({ok = true, count = #result, resources = result})
 end
 EOF
 
-# Commit
-git add factorio/evolved/scripts/place_grid.lua
-git commit -m "feat: add place_grid.lua for grid placement pattern"
+# 任务完成，文件已写入 live bundle
 ```
+
+## 安全说明
+
+- 你的 writes 被序列化保护（bundle 配置 max_concurrent_jobs=1）
+- 文件写入后立即生效，下一轮 worker preparation 会同步到 mod scripts 目录
+- 不需要 git commit/push（bundle 是 live 的）
