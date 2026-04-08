@@ -57,7 +57,7 @@ You MUST output a valid JSON ReviewProposal in your final summary:
 ```json
 {
   "problem_classification": {
-    "category": "tool_efficiency",
+    "category": "other",
     "severity": "medium",
     "summary": "Worker repeatedly called find_ore_basic (10 times), exploring large areas"
   },
@@ -105,17 +105,21 @@ Analysis:
 
 ## Categories for Factorio
 
-- `tool_efficiency`: Repeated tool calls indicate abstraction opportunity
+Use the ReviewProposal enum values only:
+
+- `other`: Repeated tool calls indicate an abstraction opportunity
 - `tool_reliability`: Retry patterns indicate reliability issues
 
 ## Action Types for Factorio
 
+Use the ReviewProposal enum values only:
+
 - `improve_tool`: Create new higher-level script
-- `update_tool`: Modify existing script behavior
 
 ## Important
 
 1. Your summary MUST contain valid JSON matching the ReviewProposal schema
-2. Always output `action_type: improve_tool` for tool_repetition patterns
-3. Focus on scripts that reduce call count by encapsulating patterns
-4. Include a concrete `task_template.goal` with the new script path
+2. Always output `problem_classification.category: other` for tool_repetition patterns
+3. Always output `action_type: improve_tool` for tool_repetition patterns
+4. Focus on scripts that reduce call count by encapsulating patterns
+5. Include a concrete `task_template.goal` with the new script path

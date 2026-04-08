@@ -24,3 +24,4 @@ ADR-0011 确定了 `Team` 是系统内第一等级的隔离机制，但过去缺
 
 ## 5. 对之前 ADR 或文档的修正说明
 
+**2026-04-07 按 ADR-0014 修正**：本文中所有 "Factorio Team" 应读作 "Factorio bundle"，`evo/teams/factorio/` 应读作 `evo/factorio/`，"Team 最高并发度 = 1" 由 `trenni` 配置中 `bundles.factorio.scheduling.max_concurrent_jobs = 1` 经 `BundleLaunchCondition` 实现。角色/工具/上下文的隔离不再依赖全局回落层，因为全局层已被删除（参见 ADR-0014）。Factorio bundle 的 `extra_networks` 与独占 `call_script` 工具约束仍然有效。

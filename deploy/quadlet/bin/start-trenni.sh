@@ -37,7 +37,7 @@ ensure_venv() {
     fi
   fi
 
-  "${venv_path}/bin/pip" install --upgrade "${package_path}"
+  "${venv_path}/bin/python" -m pip install --upgrade --force-reinstall --no-deps "${package_path}"
 }
 
 current_src_rev() {
@@ -125,4 +125,4 @@ while time.time() < deadline:
 raise SystemExit("pasloe did not become ready within 60s")
 PY
 
-exec "${TRENNI_VENV}/bin/trenni" start -c /etc/yoitsu/trenni.yaml
+exec "${TRENNI_VENV}/bin/python" -m trenni.cli start -c /etc/yoitsu/trenni.yaml

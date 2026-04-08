@@ -16,6 +16,10 @@ runtime:
     git_token_env: "GITHUB_TOKEN"
     env_allowlist:
       - "OPENAI_API_KEY"
+      - "FACTORIO_RCON_HOST"
+      - "FACTORIO_RCON_PORT"
+      - "FACTORIO_RCON_PASSWORD"
+      - "FACTORIO_MOD_SCRIPTS_DIR"
     labels:
       io.yoitsu.managed-by: "trenni"
       io.yoitsu.stack: "yoitsu"
@@ -25,6 +29,13 @@ poll_interval: 2.0
 
 bundles:
   factorio:
+    runtime:
+      env_allowlist:
+        - "OPENAI_API_KEY"
+        - "FACTORIO_RCON_HOST"
+        - "FACTORIO_RCON_PORT"
+        - "FACTORIO_RCON_PASSWORD"
+        - "FACTORIO_MOD_SCRIPTS_DIR"
     scheduling:
       max_concurrent_jobs: 1  # Serialize implementer writes to live bundle
 
@@ -35,6 +46,7 @@ default_llm:
   api_base: "https://coding.dashscope.aliyuncs.com/v1"
   api_key_env: "OPENAI_API_KEY"
   max_iterations: 30
+  max_iterations_hard: 60
   max_tokens: 4096
   temperature: 0.2
   max_retries: 3

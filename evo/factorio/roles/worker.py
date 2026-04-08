@@ -7,10 +7,18 @@ and does not produce git commits (publication strategy = skip).
 """
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 from palimpsest.runtime.roles import JobSpec, context_spec, role
 
-# Import from bundle lib - works when evo_root is on sys.path (runner.py ensures this)
-from factorio.lib.preparation import prepare_factorio_runtime
+# Role modules are loaded before evo_root is injected into sys.path.
+# Add the bundle root (evo/factorio) so sibling imports work during resolution.
+_BUNDLE_ROOT = Path(__file__).resolve().parents[1]
+if str(_BUNDLE_ROOT) not in sys.path:
+    sys.path.insert(0, str(_BUNDLE_ROOT))
+
+from lib.preparation import prepare_factorio_runtime
 
 
 def factorio_worker_publication(**kwargs) -> tuple[None, list]:
