@@ -71,7 +71,7 @@ def prepare_factorio_runtime(
     if not src.exists():
         raise RuntimeError(f"Bundle scripts dir missing: {src}")
     
-    # Safety checks before destructive rmtree (per plan review)
+    # Safety checks before destructive cleanup (per plan review)
     if dst.exists():
         # Prevent accidental deletion from misconfigured dst
         if dst == src:
@@ -89,11 +89,22 @@ def prepare_factorio_runtime(
             raise RuntimeError(
                 f"dst has {file_count} files (>100), refusing to delete (suspicious): {dst}"
             )
-        logger.info(f"Removing existing mod scripts directory: {dst}")
-        shutil.rmtree(dst)
-    
+        logger.info(f"Clearing existing mod scripts directory contents: {dst}")
+        for child in dst.iterdir():
+            if child.is_dir() and not child.is_symlink():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+    else:
+        dst.mkdir(parents=True, exist_ok=True)
+
     logger.info(f"Copying bundle scripts from {src} to {dst}")
-    shutil.copytree(src, dst)
+    for child in src.iterdir():
+        target = dst / child.name
+        if child.is_dir():
+            shutil.copytree(child, target)
+        else:
+            shutil.copy2(child, target)
     
     # Connect RCON
     rcon = RCONClient(

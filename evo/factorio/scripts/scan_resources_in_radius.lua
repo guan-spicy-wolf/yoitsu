@@ -1,4 +1,4 @@
--- Scan resources in a radius around player
+-- Scan resources in a radius around the player character
 -- DYNAMIC
 return function(args_str)
     local args = game.json_to_table(args_str)
@@ -22,18 +22,25 @@ return function(args_str)
     
     local result = {}
     for _, res in ipairs(resources) do
-        table.insert(result, {
-            name = res.name,
-            position = {x = res.position.x, y = res.position.y},
-            amount = res.amount or 0
-        })
+        local name = res.name
+        if not result[name] then
+            result[name] = {count = 0, total_amount = 0}
+        end
+        result[name].count = result[name].count + 1
+        result[name].total_amount = result[name].total_amount + (res.amount or 0)
+    end
+    
+    -- 计算实际的资源类型数量
+    local total_types = 0
+    for _ in pairs(result) do
+        total_types = total_types + 1
     end
     
     return serialize({
-        ok = true,
+        ok = true, 
         radius = radius,
         center = {x = math.floor(pos.x), y = math.floor(pos.y)},
-        count = #result,
-        resources = result
+        resources = result,
+        total_types = total_types
     })
 end

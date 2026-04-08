@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-08
 **Plan:** docs/plans/2026-04-07-factorio-optimization-loop-closure.md
-**Status:** Collision fix live-verified. Smoke partially resumed; currently blocked on implementer artifact not appearing in bundle/mod scripts despite successful task completion.
+**Status:** Collision fix live-verified. Implementer live write and worker mod-script sync are both fixed. Smoke resumed successfully, but step-reduction evidence is still inconclusive because the second-round worker immediately found 50 iron ore already in inventory.
 
 ## Implementation Summary
 
@@ -103,11 +103,12 @@ proposal_source_event_id = f"{event.id}-proposal"
 | Metric | Expected | Actual |
 |--------|----------|--------|
 | Total steps | 10-15 | Not captured from control API |
-| tool_repetition triggered | Yes | Yes (`Observation threshold exceeded: tool_repetition`, window_total=9) |
+| tool_repetition triggered | Yes | Yes (`Observation threshold exceeded: tool_repetition`) |
 | arg_pattern | find_ore_basic | Yes — implementer goal references `arg_pattern: find_ore_basic` |
-| optimizer spawn bundle | factorio | Yes (`ea81cdc120cf1496`, bundle=`factorio`) |
+| optimizer spawn bundle | factorio | Yes (e.g. `ea81cdc120cf1496`, `469a4ac461581d2f`) |
 | ReviewProposal action_type | improve_tool | Inferred from spawned implementer goal `scan_resources_in_radius.lua` |
-| New script created | Yes | **Blocked / not observed on disk** |
+| New script created | Yes | Yes — `evo/factorio/scripts/scan_resources_in_radius.lua` |
+| Mod sync works | Yes | Yes — file appears under `/home/holo/factorio/mods/factorio-agent_0.1.0/scripts/scan_resources_in_radius.lua` |
 
 ### Step 5.3: Verify New Script
 
@@ -118,13 +119,14 @@ ls -la evo/factorio/scripts/
 **Expected:** New `.lua` file present, content resembles radius scan or resource detection.
 
 **Observed on 2026-04-08:**
-- Implementer task `069d65f1b5ad760e` completed successfully.
-- Task summary claimed `scan_resources_in_radius.lua` was created under `factorio/scripts/`.
-- But the file was **not** present in either:
-  - `/home/holo/yoitsu/evo/factorio/scripts/`
-  - `/home/holo/factorio/mods/factorio-agent_0.1.0/scripts/`
-
-This is the current blocker preventing second-round confirmation.
+- Initial blocker: implementer task `069d65f1b5ad760e` claimed success but the file was not present on disk.
+- Root cause 1: job image `localhost/yoitsu-palimpsest-job:dev` was stale, so palimpsest runtime ignored `workspace_override` and wrote into `/tmp/palimpsest-*`.
+- After rebuilding the job image, implementer writes were verified to land in live evo_root.
+- Root cause 2: factorio worker jobs only received `FACTORIO_MOD_SCRIPTS_DIR` as an environment variable, not a host bind mount; after adding the RW mount, preparation then failed because it tried to `rmtree()` the bind-mounted directory itself.
+- Final fix: mount the host mod scripts directory read-write into worker jobs, then clear directory contents instead of deleting the mountpoint.
+- Verified outcomes:
+  - `evo/factorio/scripts/scan_resources_in_radius.lua` exists
+  - `/home/holo/factorio/mods/factorio-agent_0.1.0/scripts/scan_resources_in_radius.lua` exists
 
 ### Step 5.4: Second Round Execution
 
@@ -138,10 +140,12 @@ Trigger same task again. Worker preparation should:
 
 | Metric | First Round | Second Round |
 |--------|-------------|--------------|
-| Total steps | _TBD_ | _TBD_ |
-| Scripts used | find_ore_basic (repeated) | _TBD_ (should use new script) |
+| Total steps | Not captured from control API | Not meaningful in this rerun |
+| Scripts used | `find_ore_basic` repetition inferred from optimizer evidence | Worker attempted `scan_resources_in_radius`, then completed because inventory already had 50 iron ore |
 
 **Target:** Second round steps significantly lower (1-2 vs 10-15).
+
+**Observed limitation:** In the final rerun, the worker completed immediately because the player inventory already contained 50 iron ore. That means the environment was no longer suitable for measuring step reduction, even though the optimized script sync path was verified.
 
 ### Step 5.5: Runbook Archive
 
@@ -170,7 +174,7 @@ export FACTORIO_RCON_PASSWORD=your_password
 
 ## Success Criteria
 
-- [ ] Two rounds execute without manual intervention
+- [x] Two rounds execute without manual intervention
 - [ ] Step count reduction observed
-- [ ] New script appears in bundle
-- [ ] Evidence correctly routed to factorio optimizer
+- [x] New script appears in bundle
+- [x] Evidence correctly routed to factorio optimizer
