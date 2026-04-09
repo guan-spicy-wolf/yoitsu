@@ -85,6 +85,7 @@ def evaluator(goal: str = "", expected_files: list[str] | None = None, **params)
     return JobSpec(
         context_fn=context_spec(
             system="factorio/prompts/evaluator.md",
+            sections=[],  # No additional sections needed
         ),
         publication_fn=evaluator_publication,
         tools=["bash"],
