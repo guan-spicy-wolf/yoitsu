@@ -75,22 +75,16 @@ def check_dynamic_constraint(script_path: Path) -> tuple[bool, str]:
     recommended_cost=0.3,
     max_cost=0.5,
 )
-def evaluator(goal: str = "", expected_files: list[str] | None = None, **params) -> JobSpec:
+def evaluator(**params) -> JobSpec:
     """Evaluate implementer output.
     
-    Args:
-        goal: Original task goal (used to extract expected script name).
-        expected_files: Optional list of expected file paths.
+    The goal and expected files are passed via role_params.
     """
     return JobSpec(
         context_fn=context_spec(
             system="factorio/prompts/evaluator.md",
-            sections=[],  # No additional sections needed
+            sections=[],
         ),
         publication_fn=evaluator_publication,
         tools=["bash"],
-        params={
-            "goal": goal,
-            "expected_files": expected_files or [],
-        },
     )
