@@ -14,15 +14,20 @@ ADR-0015 确立了 bundle 作为独立 git 仓库的架构，但没有定义 bun
 每个 capability 具有 `setup` + `finalize` 生命周期，自包含在一个模块中：
 
 ```python
+class FinalizeResult:
+    events: list[EventData]  # "做了什么"的事件数据
+    success: bool            # 是否算成功（决定 job 终态）
+
 class Capability(Protocol):
     name: str
     def setup(self, ctx: JobContext) -> list[EventData]: ...
-    def finalize(self, ctx: JobContext) -> list[EventData]: ...
+    def finalize(self, ctx: JobContext) -> FinalizeResult: ...
 ```
 
 - **内部完成实际工作**：副作用在函数体内发生（建立连接、commit+push、停止服务等）
-- **返回事件数据**：描述"做了什么"（artifact refs、cleanup 确认等）
-- **Runtime 代发**：capability 对事件系统完全无感知
+- **返回事件数据 + success 标志**：events 描述"做了什么"，success 表示是否成功
+- **Runtime 代发事件**：capability 对事件系统完全无感知
+- **Runtime 根据 success 决定 job 终态**：全部 capability success=True → job.completed，任一 False → job.failed
 
 **原因**：capability 只关心"做什么"和"回答做了什么"，不关心"怎么发事件"。这与 observation analyzer 只返回数据、Trenni 代发是同一个原则——事件发送是系统级关注点，不应泄漏到 bundle 代码中。
 
@@ -65,6 +70,72 @@ Context provider（LLM 上下文组装）不属于 capability 模型。两者正
 | **输出去向** | 事件 → Event Store | 文本 → 注入 system/user prompt |
 
 **原因**：Context provider 的设计初衷是把"查询 Pasloe"等信息组装逻辑作为可演化代码。它不管理生命周期、不发事件、只负责回答"LLM 这次需要知道什么"。混入 capability 会模糊生命周期管理和信息组装的边界。
+
+### 2f. Finalize 错误处理：不允许抛异常，返回 success 标志
+
+Finalize 是 job 的最后一道关口，**不允许抛出异常**。原因：
+
+1. **副作用已完成**：git push、save world 等动作在 finalize 函数体内执行
+2. **因果必须记录**：无论成功或失败，都必须返回事件数据，runtime 必 emit
+3. **诊断需要信息**：失败原因必须记录在事件中
+
+**实现要求**：每个 finalize 步骤必须有 try-catch 包裹，内部完成重试逻辑，最终返回 `(events, success)`：
+
+```python
+def finalize(self, ctx: JobContext) -> FinalizeResult:
+    events = []
+    success = True
+    
+    # 重试逻辑在 fn 内部完成
+    MAX_RETRIES = 3
+    for attempt in range(MAX_RETRIES):
+        try:
+            result = self._git_publish(ctx)
+            events.append(EventData(type="artifact.published", data=result))
+            break  # 成功，跳出重试
+        except Exception as e:
+            if attempt < MAX_RETRIES - 1:
+                continue  # 重试
+            # 重试耗尽
+            events.append(EventData(type="finalize.failed", data={
+                "capability": self.name,
+                "stage": "git_publish",
+                "error": str(e),
+                "attempts": MAX_RETRIES,
+                "artifact_persisted": False
+            }))
+            success = False
+    
+    # Cleanup（失败不影响 success）
+    try:
+        self._cleanup(ctx)
+        events.append(EventData(type="cleanup.completed", data={"capability": self.name}))
+    except Exception as e:
+        events.append(EventData(type="cleanup.failed", data={
+            "capability": self.name,
+            "error": str(e)
+        }))
+    # cleanup 失败不改变 success 标志（artifact 已持久化）
+    
+    return FinalizeResult(events=events, success=success)
+```
+
+**Job 终态映射**：
+
+Runtime 检查所有 capability 的 `success` 标志：
+
+| 所有 capability success | job 终态 |
+|---|---|
+| 全部 True | `job.completed` |
+| 任一 False | `job.failed` |
+
+**关键原则**：
+
+- **Artifact 持久化是核心**：`success=False` 表示 artifact 未成功持久化
+- **Cleanup 失败不影响 success**：cleanup 是辅助动作，artifact 已持久化就算成功
+- **重试在 fn 内部完成**：capability 自己决定重试策略
+
+**Setup 失败处理不同**：Setup 失败 = job 立即失败，进入 preparation failure 路径，不进入 agent loop。
 
 ## 3. 期望达到的结果
 

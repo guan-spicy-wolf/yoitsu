@@ -1,8 +1,11 @@
 # ADR-0010: Self-Optimization Governance
 
-- Status: Accepted
+- Status: Accepted (Revised 2026-04-10)
 - Date: 2026-03-31
-- Related: ADR-0002, ADR-0007
+- Revised: 2026-04-10
+- Related: ADR-0002, ADR-0007, ADR-0017
+
+> **修订说明**：§2a 和 §4 的 observation 信号生成方式已更新为 ADR-0017 定义的后置分析模型。旧表述 "tool gateway 发 observation" 已废弃。
 
 ## Context
 
@@ -18,16 +21,15 @@ The yoitsu architecture already separates observer (Trenni) from executor (Palim
 
 Optimization begins with data. The system collects structured observation events mechanically — no LLM involved in signal generation.
 
-Observation events use the `observation.*` type namespace and are emitted by Trenni and the tool gateway based on deterministic criteria:
+**Observation 生成方式（ADR-0017 定义）**：Observation 事件由 Trenni 在 job 完成后执行后置分析产生，而非实时发出。Analyzer 遍历 job 的原始事件（`tool.called`、`llm.responded` 等），返回结构化的 observation 数据，Trenni 统一 emit。
 
-- `observation.budget_usage` — job spent >N% of budget, with breakdown (prompt vs completion, retry overhead)
-- `observation.tool_retry` — tool call failed and was retried, with failure count and pattern
-- `observation.context_overflow` — job queried Pasloe for additional context beyond what preparation provided
-- `observation.round_efficiency` — ratio of LLM rounds to concrete outputs (tool calls, commits, spawns)
-- `observation.spawn_depth` — task recursion depth exceeded threshold
+默认 observation 类型（预注册在 Trenni）：
+
 - `observation.budget_variance` — planner's estimated budget vs actual spend per job, with deviation ratio
+- `observation.tool_retry` — tool call failed and was retried, with failure count and pattern
+- `observation.round_efficiency` — ratio of LLM rounds to concrete outputs
 
-These are append-only events written to Pasloe through the normal event pipeline. They carry structured data, not natural language assessments. The set of observation types is expected to grow as the system matures.
+Bundle 可通过 `observations/` 目录提供自定义 analyzer，扩展 observation 类型（如 Factorio 的 `observation.rcon_timeout`）。
 
 ### 2. Optimization discovery is a normal task
 
@@ -56,17 +58,17 @@ This means the system's self-improvement uses exactly the same mechanisms as its
 
 ### 4. Signal collection is incremental; optimization is deferred
 
-Observation event types should be defined in contracts early (Phase 1-2 of the roadmap) and emitted as the relevant code paths are built. However, optimization tasks should not be triggered until there is sufficient signal volume — the accumulation threshold in trigger rules serves as the gate.
-
-The rationale: optimization with sparse signals produces false patterns and premature changes. The system needs months of real task execution data before self-optimization becomes valuable. Collecting signals early and acting on them late is the correct sequencing.
+Observation analyzer 应在 bundle repo 中早期定义（Phase 1-2），但 optimization tasks 不应在 observation 累积不足时触发 — accumulation threshold 在 trigger rules 中作为 gate。
 
 Phase mapping:
-- **Phase 1-2**: Define `observation.*` schemas in contracts. Emit signals from tool gateway and Trenni as relevant code is written.
+- **Phase 1-2**: Define observation analyzer schemas in bundle repo. Register with Trenni.
 - **Phase 3**: Reviewer role can read observation events as additional context.
 - **Phase 4**: Pasloe query capability enables aggregation over time windows.
 - **Phase 5**: Trigger rules activate review tasks. The optimization loop closes.
 
 Each phase adds a small increment. No phase requires building optimization-specific infrastructure.
+
+> **注意**：Observation 事件携带完整的 `analyzer_version`（bundle_sha + trenni_sha + palimpsest_sha 三方），用于历史追溯。应用时默认使用最新 analyzer。详见 ADR-0017 §2g。
 
 ### 5. Budget prediction accuracy as a system health proxy
 
@@ -121,17 +123,17 @@ items** that guide the review without imposing rigid output schema:
 
 Suggested prompt check items:
 
-- Does any role's `PreparationConfig` usage exceed N parameters? If so,
-  propose splitting the role (ADR-0003 D4).
+- Does any role's `needs` list exceed N capabilities? If so,
+  propose splitting the role or consolidating capabilities (ADR-0016).
 - What is the budget prediction variance trend for each role? Are specific
   task types systematically off? (ADR-0010 Decision 5, ADR-0004).
 - Are tool retry rates elevated for specific roles or tools?
 - Is observation signal volume growing in ways that suggest trigger
   threshold adjustment?
 
-These check items are maintained in `evo/` as part of the review role
-definition and can themselves be evolved. Adding a new check item is a
-normal code change — no schema migration needed.
+These check items are maintained in **bundle repo** (`prompts/reviewer.md`)
+as part of the review role definition and can themselves be evolved.
+Adding a new check item is a normal git commit — no schema migration needed.
 
 The review task's eval (if configured) verifies only that proposals are
 actionable — i.e., each proposal names a concrete change target and can be

@@ -84,30 +84,15 @@ factorio-bundle/
 └── examples/
 ```
 
-### D3. Target Source 与 Bundle Source 分离
+### D3. Worker Workspace 是目标仓库
 
-Job 有两个独立的 workspace 来源：
+Worker 的 workspace 是 agent 要修改的目标仓库（通常是 `factorio-agent` 或其他包含 Lua 脚本的 repo）：
 
-| 来源 | 内容 | 用途 |
-|---|---|---|
-| **Bundle Source** | factorio-bundle repo | runtime 加载 roles/capabilities/tools |
-| **Target Source** | factorio-agent repo（或其他目标仓库） | agent 执行任务、读写脚本 |
+- **准备阶段**：`git_workspace` capability clone 目标仓库到 ephemeral workspace
+- **执行阶段**：agent 读写 workspace 中的脚本文件
+- **发布阶段**：`git_workspace` capability commit + push 到目标仓库的 evolve 分支
 
-**ctx.workspace 归属**：
-
-- `ctx.bundle_workspace` = BundleSource.workspace（加载 bundle 代码）
-- `ctx.target_workspace` = TargetSource.workspace（agent 执行任务）
-
-**准备阶段**：
-
-- `git_workspace` capability clone 目标仓库到 `ctx.target_workspace`
-- bundle 代码已由 Trenni 提前物化在 `ctx.bundle_workspace`
-
-**发布阶段**：
-
-- `git_workspace` capability finalize 在 `ctx.target_workspace` 执行 git commit + push
-- **Artifact URI 指向远端仓库**：`git+ssh://git@github.com/org/factorio-agent@sha`
-- **不能指向 ephemeral workspace 路径**（如 `git+file:///tmp/workspace@sha`）
+Workspace **不是 bundle repo 的 clone**——bundle repo 用于加载 roles/capabilities/tools，workspace 用于执行具体任务。
 
 ### D4. RCON Bridge 是 Capability
 
@@ -129,25 +114,21 @@ class RconBridgeCapability:
             "host": host, "port": port
         })]
     
-    def finalize(self, ctx: JobContext) -> FinalizeResult:
+    def finalize(self, ctx: JobContext) -> list[EventData]:
         events = []
         try:
             self.bridge.close()
             events.append(EventData(type="rcon.disconnected", data={}))
-            return FinalizeResult(events=events, success=True)
         except Exception as e:
             events.append(EventData(type="finalize.failed", data={
                 "capability": self.name,
                 "stage": "disconnect",
                 "error": str(e)
             }))
-            # RCON 断开失败不影响 artifact 持久化
-            return FinalizeResult(events=events, success=True)
+        return events
 ```
 
 Role 声明 `needs=["rcon_bridge"]`，runtime 在 preparation 阶段调用 `setup()`，finalization 阶段调用 `finalize()`。
-
-**注意**：`rcon_bridge` 的 finalize 返回 `success=True` 即使断开失败，因为 artifact 持久化已在其他 capability 完成。
 
 ### D5. call_script Tool 依赖 RCON Bridge
 
@@ -160,8 +141,8 @@ def call_script(name: str, args: dict, ctx: ToolContext) -> ToolResult:
     if not bridge:
         return ToolResult(success=False, output="RCON bridge not available")
     
-    # 同步脚本（如果 target workspace 版本更新）
-    script_path = ctx.target_workspace / "scripts" / name  # 使用 target_workspace
+    # 同步脚本（如果 workspace 版本更新）
+    script_path = ctx.workspace / "scripts" / name
     if script_path.exists():
         sync_result = bridge.sync_script(name, script_path)
         if not sync_result.success:
@@ -201,100 +182,73 @@ Factorio publication 涉及两个 capability finalize：
 **git_workspace capability finalize**（目标仓库）：
 
 ```python
-def finalize(self, ctx: JobContext) -> FinalizeResult:
+def finalize(self, ctx: JobContext) -> list[EventData]:
     events = []
-    success = True
-    
-    # Hallucination gate
-    subprocess.run(["git", "add", "-A"], cwd=ctx.target_workspace)
-    result = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=ctx.target_workspace)
-    if result.returncode == 0:
-        # Worker 无变更 = hallucination = 失败
-        events.append(EventData(type="publication.skipped", data={"reason": "no_changes"}))
-        return FinalizeResult(events=events, success=False)  # success=False
-    
-    # 重试 push
-    MAX_RETRIES = 3
-    sha = None
-    for attempt in range(MAX_RETRIES):
-        try:
-            subprocess.run(["git", "commit", "-m", f"job: {ctx.job_id}"], cwd=ctx.target_workspace)
-            sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ctx.target_workspace)
-            subprocess.run(["git", "push"], cwd=ctx.target_workspace, check=True)
-            # Artifact URI 指向远端仓库
-            events.append(EventData(type="artifact.published", data={
-                "ref": f"{ctx.target_source.repo_uri}@{sha.strip()}",  # 远端 URI
-                "relation": "workspace_output"
-            }))
-            return FinalizeResult(events=events, success=True)
-        except subprocess.CalledProcessError as e:
-            if attempt < MAX_RETRIES - 1:
-                continue
-            events.append(EventData(type="finalize.failed", data={
-                "capability": self.name,
-                "stage": "push",
-                "error": str(e),
-                "local_commit_sha": sha.strip() if sha else None,
-                "artifact_persisted": False
-            }))
-            success = False
-    
-    return FinalizeResult(events=events, success=success)
+    try:
+        # Hallucination gate
+        subprocess.run(["git", "add", "-A"], cwd=ctx.workspace)
+        result = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=ctx.workspace)
+        if result.returncode == 0:
+            # 无变更，publication 成功但无 artifact
+            events.append(EventData(type="publication.skipped", data={"reason": "no_changes"}))
+            return events
+        
+        # Commit + push
+        subprocess.run(["git", "commit", "-m", f"job: {ctx.job_id}"], cwd=ctx.workspace)
+        subprocess.run(["git", "push"], cwd=ctx.workspace)
+        
+        # 获取 git_ref
+        sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ctx.workspace)
+        events.append(EventData(type="artifact.published", data={
+            "ref": f"git+file://{ctx.workspace}@{sha.strip()}",
+            "relation": "workspace_output"
+        }))
+    except Exception as e:
+        events.append(EventData(type="finalize.failed", data={
+            "capability": self.name,
+            "stage": "git_publish",
+            "error": str(e),
+            "retry_possible": True
+        }))
+    return events
 ```
 
 **factorio_save capability finalize**（世界状态）：
 
 ```python
-def finalize(self, ctx: JobContext) -> FinalizeResult:
+def finalize(self, ctx: JobContext) -> list[EventData]:
     events = []
-    success = True
-    
     bridge = ctx.resources.get("rcon_bridge")
-    if not bridge or not bridge.world_mutated:
-        # 未变更世界，跳过 save（不影响 success）
-        events.append(EventData(type="save.skipped", data={"reason": "no_mutation"}))
-        return FinalizeResult(events=events, success=True)  # 不影响 job 终态
     
-    MAX_RETRIES = 2
-    for attempt in range(MAX_RETRIES):
-        try:
-            save_result = bridge.save_world()
-            if save_result.success:
-                events.append(EventData(type="artifact.published", data={
-                    "ref": f"file://{save_result.save_path}",
-                    "relation": "world_checkpoint"
-                }))
-                return FinalizeResult(events=events, success=True)
-            else:
-                if attempt < MAX_RETRIES - 1:
-                    continue
-                events.append(EventData(type="finalize.failed", data={
-                    "capability": self.name,
-                    "stage": "save_world",
-                    "error": save_result.error,
-                    "artifact_persisted": False
-                }))
-                success = False
-        except Exception as e:
-            if attempt < MAX_RETRIES - 1:
-                continue
+    if not bridge or not bridge.world_mutated:
+        # 未变更世界，跳过 save
+        events.append(EventData(type="save.skipped", data={"reason": "no_mutation"}))
+        return events
+    
+    try:
+        save_result = bridge.save_world()
+        if save_result.success:
+            events.append(EventData(type="artifact.published", data={
+                "ref": f"file://{save_result.save_path}",
+                "relation": "world_checkpoint"
+            }))
+        else:
             events.append(EventData(type="finalize.failed", data={
                 "capability": self.name,
                 "stage": "save_world",
-                "error": str(e),
-                "artifact_persisted": False
+                "error": save_result.error,
+                "partial_success": True  # git 已发布，world save 失败
             }))
-            success = False
-    
-    return FinalizeResult(events=events, success=success)
+    except Exception as e:
+        events.append(EventData(type="finalize.failed", data={
+            "capability": self.name,
+            "stage": "save_world",
+            "error": str(e)
+        }))
+    return events
 ```
 
-**关键点**：
-
-- 两个 finalize 互不依赖，各自返回 `(events, success)`
-- Runtime 检查所有 capability 的 `success`，任一 False → `job.failed`
-- 如果 git_workspace 成功但 factorio_save 失败，job 终态为 `failed`
-- 事件记录详细诊断信息，供后续分析
+**关键点**：两个 finalize 互不依赖，各自返回事件。如果 git 成功但 save 失败，两条事件都会记录，后续可诊断。
 
 ### D8. 并发控制通过 Bundle 配置
 
@@ -385,16 +339,13 @@ Analyzer 在 bundle repo 中定义，随 bundle 演化。版本定格规则见 A
 1. ✅ Trenni 注册 factorio bundle，`resolved_ref` 从 selector 解析
 2. ✅ Factorio job 容器能通过 `factorio-net` 访问 server
 3. ✅ `call_script("ping", {})` 从 worker job 成功执行
-4. ✅ Target workspace 中编辑的脚本能通过 `call_script` 同步到 server
+4. ✅ Workspace 中编辑的脚本能通过 `call_script` 同步到 server
 5. ✅ `RoleManager.resolve("worker", bundle="factorio")` 返回 factorio worker role
 6. ✅ 两个 factorio jobs 不能并发运行 — 第二个在队列等待
-7. ✅ Worker job 变更世界后，finalize 成功返回 `success=True`，emit `artifact.published` (git + save)
-8. ✅ Git push 失败时返回 `success=False`，emit `finalize.failed`，job 终态 `failed`
-9. ✅ Hallucination（无变更）时返回 `success=False`，job 终态 `failed`
-10. ✅ Artifact URI 指向远端仓库（如 `git+ssh://git@github.com/org/repo@sha`），不是 ephemeral workspace
-11. ✅ Observation analyzer 用 job 的 resolved_ref 版本执行分析
-12. ✅ Review task 携带 `triggered_by` 因果链
-13. ✅ `analyzer_version` 包含三方 SHA（bundle_sha + trenni_sha + palimpsest_sha）
+7. ✅ Worker job 变更世界后，finalize 成功 emit `artifact.published` (git + save)
+8. ✅ Save 失败时 emit `finalize.failed`，git 已发布的事件仍然存在
+9. ✅ Observation analyzer 用 job 的 resolved_ref 版本执行分析
+10. ✅ Review task 携带 `triggered_by` 因果链
 
 ## 对旧 ADR-0012 的修正
 

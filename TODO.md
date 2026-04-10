@@ -6,7 +6,93 @@
 - 当前任务工件：`.task/`
 - 历史归档：[docs/archive/](docs/archive/)
 
-## 2026-04-10 文档层架构重构
+## 2026-04-10 文档层架构重构（第四轮清理）
+
+### 完成的工作（文档一致性清理）
+
+1. ✅ **Observation 触发条件修正**
+   - architecture.md §6.1: 所有 terminal job 状态触发分析，不只是 job.completed
+   - ADR-0017 §2c: 流程图补充 analyzer_version，明确 failed/partial 也触发
+
+2. ✅ **旧 contract 残留清理**
+   - architecture.md 开头: adr/0012-factorio-task-source.md 改为活跃文档，archive/adr/0012-...old.md 才是历史
+   - ADR-0015 §5: runtime 消费双 workspace，不是单一 BundleSource.workspace
+
+3. ✅ **analyzer_version 全量同步**
+   - ADR-0010 §4: 两方 SHA → 三方 SHA（bundle_sha + trenni_sha + palimpsest_sha）
+
+文档层设计完成，跨文档一致性问题已清理。
+
+## 2026-04-10 文档层架构重构（第三轮）
+
+### 完成的工作（解决 reviewer 指出的结构问题）
+
+1. ✅ **Target Source 概念新增**
+   - architecture.md §3.3.1: 与 Bundle Source 分离
+   - ctx.bundle_workspace 加载代码，ctx.target_workspace 执行任务
+   - Artifact URI 必须指向远端仓库，不能指向 ephemeral workspace
+
+2. ✅ **Finalize 返回 FinalizeResult(events, success)**
+   - architecture.md §5.1/§5.4: capability 返回 success 标志
+   - ADR-0016 §2a/§2f: Protocol 定义，内部重试，返回 success
+   - Job 终态：全部 success=True → job.completed，任一 False → job.failed
+   - Hallucination gate：无变更 → success=False → job.failed（Worker role）
+
+3. ✅ **analyzer_version 三方 SHA**
+   - architecture.md §6.4: bundle_sha + trenni_sha + palimpsest_sha
+   - ADR-0017 §2g: 三方职责明确
+   - 全局替换：palimpsest_sha → 三方 SHA
+
+4. ✅ **累积触发原子性**
+   - architecture.md §6.5: 先创建 Review Task，再 emit consumed
+   - ADR-0017 §2h: triggered_by 幂等键
+   - 重放：已存在 Task → 仅补发 consumed；不存在 → 重新创建
+
+5. ✅ **Artifact URI 指向远端**
+   - ADR-0015 §6: push 成功后 URI 指向 repo_uri@sha
+   - ADR-0012 D3/D7: 示例修正，不指向 ephemeral workspace
+
+## 2026-04-10 文档层架构重构（第二轮）
+
+### 完成的工作（第二轮 review 后补充）
+
+1. ✅ **architecture.md 关键闭环补充**
+   - §5.4: Finalize 错误处理策略（try-catch、finalize.failed 事件）
+   - §6.4: Analyzer 版本定格规则（记录 bundle_sha + palimpsest_sha，应用用最新）
+   - §6.5: 累积触发消费语义（observation.consumed 事件、batch_members、去重规则）
+   - §7.2: bundle 字段归属明确（任务语义类）
+   - 开头: Team → Bundle 迁移声明
+
+2. ✅ **ADR-0016 补充 finalize 错误处理**
+   - 2f: Finalize 不允许失败，必须返回事件
+   - 事件结构：capability、stage、error、partial_success、retry_possible
+   - Setup 失败 = job abort，finalize 失败 = 事件记录
+
+3. ✅ **ADR-0017 补充版本定格和消费语义**
+   - 2g: Analyzer 版本定格（记录版本、应用最新、复现用定格）
+   - 2h: 累积触发消费语义（observation.consumed、batch_members、去重）
+   - 2i: Analyzer 注册时机（Trenni 启动、bundle 更新、per-job 版本定格）
+
+4. ✅ **ADR-0012 完整重写（Bundle + Capability worked example）**
+   - Factorio 作为 bundle而非 team
+   - factorio-bundle repo 目录结构（capabilities/、roles/、tools/、observations/）
+   - rcon_bridge 作为 capability（setup/finalize）
+   - call_script 工具依赖 rcon_bridge 注入
+   - git_workspace + factorio_save 双 finalize
+   - max_concurrent_jobs: 1 通过 bundle config 实现
+   - 旧版移入 docs/archive/adr/0012-factorio-task-source-old.md
+
+5. ✅ **ADR-0010 清理旧表述**
+   - §2a: observation 生成方式改为 ADR-0017 后置分析
+   - §2: review check items 在 bundle repo 而非 evo/
+   - §4: Phase mapping 更新为 analyzer 注册流程
+
+6. ✅ **ADR-0015 §6 Push 策略拍板**
+   - 同步 push，失败即 finalize.failed
+   - push 失败时 commit 仍存在本地
+   - 不采用异步 push
+
+## 2026-04-10 文档层架构重构（第一轮）
 
 ### 完成的工作
 
