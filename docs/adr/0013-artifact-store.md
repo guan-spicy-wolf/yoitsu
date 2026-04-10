@@ -1,3 +1,6 @@
+> **⚠️ Superseded by [ADR-0015](0015-bundle-as-repo.md)**  
+> ADR-0015 replaces the unified Artifact Store with URI scheme-based external references. Git becomes the native backend for code-like artifacts instead of a "compatibility receipt". The Blob/Tree model and ArtifactRef/ArtifactBinding abstraction described here are no longer the architecture direction.
+
 # 0013: 产物物理存储层 (Artifact Store) 对接准则
 
 ## 1. 现状与存在的问题

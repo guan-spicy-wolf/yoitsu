@@ -1,3 +1,6 @@
+> **⚠️ Superseded by [ADR-0015](adr/0015-bundle-as-repo.md)**  
+> This TODO's "Not In Scope" items (bundle manifests, multi-repo distribution) are now core features in ADR-0015. The "Target State" directory layout (`evo/<bundle>/`) is replaced by independent bundle repositories. Do not use this as an active reference.
+
 # TODO: Bundle Isolation
 
 **Status:** In Progress

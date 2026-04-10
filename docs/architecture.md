@@ -1,3 +1,6 @@
+> **⚠️ Superseded by [ADR-0015](adr/0015-bundle-as-repo.md)**  
+> This document describes a pre-bundle-as-repo architecture and contains outdated terminology (`evo`, `team`, `Artifact Store`, `evo_root`). It will be rewritten after Phase 1 code lands. Do not use it as a reference for new implementation.
+
 # Yoitsu 架构指南
 
 Yoitsu 是一个围绕“事件流”与“产物存储”（Artifacts）构建的自我演进 Agent 架构。
