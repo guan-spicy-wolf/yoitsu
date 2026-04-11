@@ -41,7 +41,7 @@ The architecture now matches the code split:
 ```bash
 ./scripts/build-job-image.sh
 ./scripts/deploy-quadlet.sh
-./scripts/quadlet-status.sh
+systemctl --user status yoitsu-pod.service yoitsu-pasloe.service yoitsu-trenni.service
 ```
 
 ## Manual Install
@@ -104,7 +104,6 @@ podman build -t localhost/yoitsu-palimpsest-job:dev \
 Status:
 
 ```bash
-./scripts/quadlet-status.sh
 systemctl --user status yoitsu-postgres.service yoitsu-pasloe.service yoitsu-trenni.service
 podman pod ps
 podman ps

@@ -7,7 +7,7 @@ Yoitsu is the umbrella repo for a four-repo agent stack:
 - `palimpsest` runs one job at a time inside the chosen isolation backend.
 - `yoitsu-contracts` defines the shared event, config, condition, and client contracts.
 
-The current architecture is documented in [docs/architecture.md](docs/architecture.md). The merged architecture decision record lives in [docs/adr/0001-architecture-redesign.md](docs/adr/0001-architecture-redesign.md).
+The current architecture is documented in [docs/architecture.md](docs/architecture.md). Key architecture decisions are recorded in [docs/adr/](docs/adr/).
 
 ## Repositories
 
@@ -68,7 +68,7 @@ Inspect status and logs:
 uv run yoitsu status
 uv run yoitsu logs --service trenni --lines 50
 uv run yoitsu logs --service pasloe --lines 50
-python3 scripts/monitor.py --hours 5
+uv run yoitsu watch --hours 5
 ```
 
 Pause or resume scheduling:
@@ -86,18 +86,22 @@ uv run yoitsu down
 
 ## Task Submission
 
-Yoitsu CLI still accepts a simple YAML task list. Trenni assigns a `task_id` when one is not provided.
+Yoitsu CLI accepts a YAML task list with canonical fields. Trenni assigns a `task_id` when one is not provided.
 
 ```yaml
 tasks:
-  - task: "Add unit tests for the user authentication module"
+  - goal: "Add unit tests for the user authentication module"
     role: "default"
-    repo_url: "https://github.com/your-org/your-repo.git"
+    repo: "https://github.com/your-org/your-repo.git"
 
-  - task: "Investigate flaky publication guardrails"
+  - goal: "Investigate flaky publication guardrails"
     role: "default"
-    repo_url: "https://github.com/your-org/your-repo.git"
+    repo: "https://github.com/your-org/your-repo.git"
 ```
+
+**Canonical fields**: `goal` (required), `role`, `budget`, `repo`, `init_branch`, `params`, `eval_spec`, `sha`, `input_artifacts`.
+
+**Legacy fields rejected**: `task`, `repo_url`, `branch`, `prompt`, `context`.
 
 ## Configuration
 
@@ -122,6 +126,15 @@ runtime:
 max_workers: 4
 poll_interval: 2.0
 
+bundles:
+  default: {}  # Fallback bundle
+  factorio:
+    source:
+      url: "git+file:///path/to/factorio-bundle.git"
+      selector: "evolve"
+    scheduling:
+      max_concurrent_jobs: 1
+
 default_llm:
   model: "kimi-k2.5"
   api_base: "https://coding.dashscope.aliyuncs.com/v1"
@@ -137,7 +150,7 @@ For the current rootless Podman + Quadlet development deployment:
 ```bash
 ./scripts/build-job-image.sh
 ./scripts/deploy-quadlet.sh
-./scripts/quadlet-status.sh
+systemctl --user status yoitsu-pod.service yoitsu-pasloe.service yoitsu-trenni.service
 ```
 
 The deployment model is documented in [deploy/quadlet/README.md](deploy/quadlet/README.md).

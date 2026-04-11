@@ -24,8 +24,12 @@ poll_interval: 2.0
 
 bundles:
   factorio:
+    source:
+      url: "git+file:///home/holo/bundles/factorio-bundle.git"
+      selector: "evolve"  # Branch to track for evolution
     scheduling:
       max_concurrent_jobs: 1  # Serialize implementer writes to live bundle
+  default: {}  # Fallback bundle for tasks without bundle specification
 
 default_llm:
   model: "kimi-k2.5"
