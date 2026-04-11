@@ -6,6 +6,40 @@
 - 当前任务工件：`.task/`
 - 历史归档：[docs/archive/](docs/archive/)
 
+## 2026-04-11 代码审查修复 (第三轮)
+
+### 修复的Issues
+
+| Issue | Severity | 描述 | 修复 |
+|-------|----------|------|------|
+| Critical #1 | Hallucination gate role_type | 添加完整文档说明role_type合约 + 日志 | ✓ |
+| Important #2 | Artifact URI fallback | 移除git_commit: fallback，改为显式失败 | ✓ |
+
+### 修复详情
+
+1. **Hallucination gate documentation** (capability.py)
+   - JobContext docstring: 完整说明role_type行为合约
+   - 记录"worker"=failure, "planner/evaluator"=success
+   - 说明role_type来源: RoleMetadata.role_type via @role decorator
+   - 添加日志: hallucination gate触发时记录role_type和处理结果
+   - 添加is_hallucination字段到publication.skipped事件
+
+2. **Artifact URI validation** (capability.py)
+   - 移除git_commit:{sha} fallback（违反ADR-0015）
+   - 显式检查target_source.repo_uri
+   - 缺失时emit finalize.failed + success=False
+   - 清晰错误消息说明配置错误
+
+### 测试状态
+
+- palimpsest: 175 passed ✓
+
+### 待审查
+
+需要再次运行代码审查确认修复正确。
+
+---
+
 ## 2026-04-11 代码审查通过 (第二轮)
 
 ### 审查范围
