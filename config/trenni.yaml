@@ -1,6 +1,7 @@
 pasloe_url: "http://localhost:8000"
 pasloe_api_key_env: "PASLOE_API_KEY"
 source_id: "trenni-supervisor"
+workspace_root: "/tmp/yoitsu-workspaces"
 
 runtime:
   kind: "podman"

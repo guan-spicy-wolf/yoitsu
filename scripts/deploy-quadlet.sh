@@ -47,6 +47,7 @@ if ! command -v systemctl >/dev/null 2>&1; then
 fi
 
 mkdir -p "$QUADLET_DEST" "$QUADLET_DEST/bin"
+mkdir -p /tmp/yoitsu-workspaces
 
 copy_file() {
     local rel="$1"
