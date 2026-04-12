@@ -29,6 +29,9 @@ poll_interval: 2.0
 
 bundles:
   factorio:
+    source:
+      url: "https://github.com/guan-spicy-wolf/factorio-bundle.git"
+      selector: "evolve"
     runtime:
       env_allowlist:
         - "OPENAI_API_KEY"

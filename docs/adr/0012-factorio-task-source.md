@@ -28,7 +28,7 @@ Factorio 作为一个名为 `"factorio"` 的 bundle 注册在 Trenni：
 bundles:
   factorio:
     source:
-      url: "git+file:///home/holo/bundles/factorio-bundle.git"
+      url: "https://github.com/guan-spicy-wolf/factorio-bundle.git"
       selector: evolve
     runtime:
       image: "localhost/yoitsu-factorio-job:dev"
@@ -106,7 +106,7 @@ Job 有两个独立的 workspace 来源：
 **发布阶段**：
 
 - `git_workspace` capability finalize 在 `ctx.target_workspace` 执行 git commit + push
-- **Artifact URI 指向远端仓库**：`git+ssh://git@github.com/org/factorio-agent@sha`
+- **Artifact URI 指向远端仓库**：`git+https://github.com/org/factorio-agent@sha`
 - **不能指向 ephemeral workspace 路径**（如 `git+file:///tmp/workspace@sha`）
 
 ### D4. RCON Bridge 是 Capability
@@ -391,7 +391,7 @@ Analyzer 在 bundle repo 中定义，随 bundle 演化。版本定格规则见 A
 7. ✅ Worker job 变更世界后，finalize 成功返回 `success=True`，emit `artifact.published` (git + save)
 8. ✅ Git push 失败时返回 `success=False`，emit `finalize.failed`，job 终态 `failed`
 9. ✅ Hallucination（无变更）时返回 `success=False`，job 终态 `failed`
-10. ✅ Artifact URI 指向远端仓库（如 `git+ssh://git@github.com/org/repo@sha`），不是 ephemeral workspace
+10. ✅ Artifact URI 指向远端仓库（如 `git+https://github.com/org/repo@sha`），不是 ephemeral workspace
 11. ✅ Observation analyzer 用 job 的 resolved_ref 版本执行分析
 12. ✅ Review task 携带 `triggered_by` 因果链
 13. ✅ `analyzer_version` 包含三方 SHA（bundle_sha + trenni_sha + palimpsest_sha）
