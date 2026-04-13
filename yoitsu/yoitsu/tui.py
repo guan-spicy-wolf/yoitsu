@@ -286,6 +286,7 @@ class JobDetailScreen(Screen[None]):
         Binding("escape", "dismiss", "Back"),
         Binding("q", "dismiss", "Back"),
         Binding("r", "refresh_detail", "Refresh"),
+        Binding("t", "go_task", "Go to Task"),
     ]
 
     def __init__(
@@ -313,6 +314,16 @@ class JobDetailScreen(Screen[None]):
 
     def action_refresh_detail(self) -> None:
         self.run_worker(self._load(), exclusive=True, exit_on_error=False)
+
+    def action_go_task(self) -> None:
+        """Navigate to the task this job belongs to."""
+        self.run_worker(self._go_task(), exclusive=True, exit_on_error=False)
+
+    async def _go_task(self) -> None:
+        """Fetch job to get task_id and push TaskDetailScreen."""
+        job = await self._trenni.get_job(self._job_id)
+        if job and job.get("task_id"):
+            self.app.push_screen(TaskDetailScreen(job["task_id"], self._pasloe, self._trenni))
 
     async def _load(self) -> None:
         """Fetch job details and events, update display."""
@@ -364,12 +375,6 @@ class JobDetailScreen(Screen[None]):
 class TaskDetailScreen(Screen[None]):
     """Detail view for a single task with DAG visualization."""
 
-    BINDINGS = [
-        Binding("escape", "dismiss", "Back"),
-        Binding("q", "dismiss", "Back"),
-        Binding("r", "refresh_detail", "Refresh"),
-    ]
-
     CSS = """
     TaskDetailScreen {
         layout: vertical;
@@ -399,9 +404,15 @@ class TaskDetailScreen(Screen[None]):
         height: auto;
         max-height: 6;
         padding: 0 2;
-        border-top: solid $primary;
     }
     """
+
+    BINDINGS = [
+        Binding("escape", "dismiss", "Back"),
+        Binding("q", "dismiss", "Back"),
+        Binding("r", "refresh_detail", "Refresh"),
+        Binding("p", "go_parent", "Parent Task"),
+    ]
 
     def __init__(self, task_id: str, pasloe: "PasloeClient", trenni: "TrenniClient") -> None:
         super().__init__()
@@ -426,6 +437,12 @@ class TaskDetailScreen(Screen[None]):
 
     async def action_refresh_detail(self) -> None:
         self.run_worker(self._load(), exclusive=True, exit_on_error=False)
+
+    def action_go_parent(self) -> None:
+        """Navigate to parent task in the DAG."""
+        if "/" in self._task_id:
+            parent_id = self._task_id.rsplit("/", 1)[0]
+            self.app.push_screen(TaskDetailScreen(parent_id, self._pasloe, self._trenni))
 
     async def _load(self) -> None:
         meta_widget: Static = self.query_one("#task-meta", Static)
