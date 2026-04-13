@@ -3,34 +3,15 @@
 Reads observation evidence (tool_name, arg_pattern, call_count, similarity, bundle)
 and produces a ReviewProposal targeting factorio/scripts/ for tool evolution.
 For dispatcher tools, the dispatched script name is encoded as `arg_pattern`.
+
+Per ADR-0018 Capability-Only Role Lifecycle:
+- needs=[] means no extra capability requirements
+- No preparation_fn or publication_fn (unified lifecycle)
+- Output goes via summary field in interaction result
 """
 from __future__ import annotations
 
-from palimpsest.config import WorkspaceConfig
 from palimpsest.runtime.roles import JobSpec, context_spec, role
-
-
-def factorio_optimizer_preparation(**kwargs) -> WorkspaceConfig:
-    """Optimizer doesn't need a git workspace.
-    
-    Returns:
-        WorkspaceConfig with empty repo (analysis only)
-    """
-    return WorkspaceConfig(repo="", new_branch=False)
-
-
-def factorio_optimizer_publication(**kwargs) -> tuple[None, list]:
-    """Optimizer doesn't produce git commits.
-
-    Output is the ReviewProposal JSON in summary field.
-    
-    Returns:
-        (None, []) - no git ref, no artifact bindings
-    """
-    return None, []
-
-
-factorio_optimizer_publication.__publication_strategy__ = "skip"
 
 
 @role(
@@ -40,6 +21,7 @@ factorio_optimizer_publication.__publication_strategy__ = "skip"
     min_cost=0.1,
     recommended_cost=0.5,
     max_cost=1.0,
+    needs=[],  # ADR-0018: Explicit empty capability (analysis-only)
 )
 def optimizer(**params) -> JobSpec:
     """Factorio-specific optimizer role definition.
@@ -48,6 +30,7 @@ def optimizer(**params) -> JobSpec:
     - Receives observation evidence via role_params
     - Extracts script name from arg_pattern field
     - Outputs ReviewProposal targeting factorio/scripts/
+    - No capability needed (analysis-only role)
     
     Expected role_params:
         metric_type: The observation metric (e.g., "tool_repetition")
@@ -62,11 +45,9 @@ def optimizer(**params) -> JobSpec:
             - similarity: Argument similarity (0.0-1.0)
     """
     return JobSpec(
-        preparation_fn=factorio_optimizer_preparation,
         context_fn=context_spec(
             system="factorio/prompts/optimizer.md",
             sections=[],  # Evidence goes via role_params, not context sections
         ),
-        publication_fn=factorio_optimizer_publication,
         tools=[],  # No special tools needed, just LLM analysis
     )
