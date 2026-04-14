@@ -45,7 +45,7 @@ bundles:
 default_eventstore_source: "palimpsest-agent"
 
 default_llm:
-  model: "glm-5"
+  model: "kimi-k2.5"
   api_base: "https://coding.dashscope.aliyuncs.com/v1"
   api_key_env: "OPENAI_API_KEY"
   max_iterations: 30
@@ -71,3 +71,12 @@ api_port: 8100
 webhook_secret: ""
 trenni_public_url: "http://127.0.0.1:8100"
 webhook_poll_interval: 30.0
+
+# Observation aggregation config - raised thresholds to limit optimizer spawns
+observation_aggregation_interval: 300.0
+observation_window_hours: 24
+observation_thresholds:
+  budget_variance: 999.0  # effectively disabled
+  tool_repetition: 999.0  # effectively disabled
+  tool_retry: 999.0
+  context_late_lookup: 999.0
