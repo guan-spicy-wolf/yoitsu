@@ -3,6 +3,9 @@
 Per ADR-0019: output_authority="analysis" — read-only, spawns children but no direct output.
 Per ADR-0018: uses capability-only lifecycle (needs=[]).
 Uses spawn tool to create implementer/evaluator/optimizer child jobs.
+
+Per ADR-0006: In join mode (after children complete), uses join_context to
+decide whether goal is achieved or needs follow-up work.
 """
 from __future__ import annotations
 
@@ -32,11 +35,29 @@ def planner(**params) -> JobSpec:
       - optimizer: for tool evolution (output_authority="analysis")
       - worker: for in-game execution (output_authority="live_runtime", needs=["factorio_runtime"])
     - No git publication (spawn decisions in summary)
+
+    Per ADR-0006:
+    - In join mode (mode="join" in role_params), uses join_context to assess child results
+    - Uses planner-join.md prompt with join_context section
     """
-    return JobSpec(
-        context_fn=context_spec(
-            system="factorio/prompts/planner.md",
-            sections=[],  # Planner doesn't need script listing
-        ),
-        tools=["spawn"],  # Spawn tool for child job creation
-    )
+    mode = params.get("mode", "")
+
+    if mode == "join":
+        # Join mode: continuation planner after children complete
+        # Uses join_context section to receive child task results
+        return JobSpec(
+            context_fn=context_spec(
+                system="prompts/planner-join.md",
+                sections=[{"type": "join_context"}],
+            ),
+            tools=["spawn"],  # Can spawn follow-up tasks if needed
+        )
+    else:
+        # Initial planning mode
+        return JobSpec(
+            context_fn=context_spec(
+                system="prompts/planner.md",
+                sections=[],  # Planner doesn't need script listing
+            ),
+            tools=["spawn"],  # Spawn tool for child job creation
+        )
